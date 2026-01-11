@@ -59,8 +59,12 @@ export function Profile() {
 
     // Count how many lessons have both MC and OE completed
     // Lesson IDs are in format "courseId-moduleId-lessonId" e.g., "1-1-1"
-    const completedMCForCourse = completedMC.filter(id => id.startsWith(`${courseId}-`)).length;
-    const completedOEForCourse = completedOE.filter(id => id.startsWith(`${courseId}-`)).length;
+    // completedMC and completedOE are now objects, not arrays
+    const completedMCKeys = typeof completedMC === 'object' ? Object.keys(completedMC) : [];
+    const completedOEKeys = typeof completedOE === 'object' ? Object.keys(completedOE) : [];
+    
+    const completedMCForCourse = completedMCKeys.filter(id => id.startsWith(`${courseId}-`)).length;
+    const completedOEForCourse = completedOEKeys.filter(id => id.startsWith(`${courseId}-`)).length;
     
     // Progress is (completed lessons * 2) / (total lessons * 2) * 100
     const totalCompleted = completedMCForCourse + completedOEForCourse;
@@ -265,10 +269,9 @@ export function Profile() {
           </div>
         </motion.div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
           {[
             { label: 'Total XP', value: profile?.xp || 0 },
-            { label: 'Games Completed', value: profile?.games_played || 0 },
             { label: 'Multiple Choice Questions', value: profile?.multiple_choice_questions_done || 0 },
             { label: 'Open Ended Questions', value: profile?.open_ended_questions_done || 0 },
           ].map((stat, index) => (

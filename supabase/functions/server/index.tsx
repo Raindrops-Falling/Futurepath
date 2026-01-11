@@ -16,7 +16,8 @@ requirements for the data structure, fields, and achievement logic.
 KV STORE DATA STRUCTURE
 --------------------------------------------------------------------------------
 
-Key Format: `user:{user_id}`
+Key Format: `user:{user_id}` for authenticated users
+Key Format: `anon:{cookie_id}` for anonymous users
 
 Value Structure (JSON):
 {
@@ -27,7 +28,11 @@ Value Structure (JSON):
   rank: string, // "Beginner" (0-199), "Intermediate" (200-499), "Advanced" (500-999), "Expert" (1000+)
   
   // Progress Tracking
-  games_played: number,
+  games_played: number, // Count of UNIQUE games played
+  games_list: string[], // List of all game IDs visited
+  articles_read: number, // Count of UNIQUE articles read
+  articles_list: string[], // List of all article IDs visited
+  
   lesson_progress: {
     course_1: number, // Percentage 0-100
     course_2: number,
@@ -36,21 +41,39 @@ Value Structure (JSON):
     course_5: number,
   },
   
-  // Question Tracking
+  // Question Tracking - NEW FORMAT: Object with lesson_id:percentage
   open_ended_questions_done: number,
   multiple_choice_questions_done: number,
-  completedMC: string[], // Array of lesson IDs like ["1-1-1", "1-1-2", ...]
-  completedOE: string[], // Array of lesson IDs like ["1-1-1", "1-1-2", ...]
+  completedMC: { [key: string]: number }, // { "1-1-1": 60, "1-1-2": 100, ... }
+  completedOE: { [key: string]: number }, // { "1-1-1": 50, "3-3-1": 100, ... }
   
-  // NEW FIELDS - Recently Added
+  // Recent Activity
   recent_courses: string[], // Array of course IDs like ["1", "2", "3"] - ordered by most recent
-  articles_read: number, // Count of articles read
   
   // Feedback
   feedback: any[], // Array of feedback objects from open-ended questions
   
   // Profile
   profile_picture_url: string, // Optional URL to profile picture
+  
+  // Corporate Clicker Game State
+  corporate_clicker: {
+    money: number,
+    money_per_second: number,
+    last_played: string, // ISO timestamp
+    buildings: {
+      developer: number,
+      manager: number,
+      shareholder: number,
+      ceo: number,
+      investor: number,
+      board_member: number,
+      venture_capitalist: number,
+      hedge_fund: number,
+      conglomerate: number,
+      monopoly: number,
+    }
+  },
   
   // Achievements
   achievements: {
@@ -59,9 +82,9 @@ Value Structure (JSON):
     first_game: boolean,
     course_completed: boolean,
     
-    // NEW ACHIEVEMENTS - Game & Article Based (Removed Streak-Based)
-    five_games: boolean, // Complete 5 games
-    three_articles: boolean, // Read 3 articles
+    // Game & Article Based
+    five_games: boolean, // Complete 5 unique games
+    three_articles: boolean, // Read 3 unique articles
     
     // Counters (for achievement tracking)
     total_lessons_completed: number,
@@ -74,9 +97,7 @@ Value Structure (JSON):
       '1000': boolean,
     },
     
-    // LEGACY FIELDS - Still tracked for backwards compatibility but not shown in UI
-    streak_days: number,
-    max_streak: number,
+    // Activity tracking (no longer used for streaks in UI)
     last_activity_date: string | null, // ISO date string
   }
 }
@@ -101,23 +122,17 @@ via the /update-achievements endpoint. Here's the logic:
    - first_game: Set to true when achievement_type='game_completed' is sent
    - Also auto-sets when total_games_completed increments
 
-4. Five Games (NEW - Needs Implementation):
-   - five_games: Set to true when total_games_completed >= 5
-   - Should be checked whenever game_completed achievement is updated
+4. Five Games:
+   - five_games: Set to true when games_played >= 5 (unique games)
+   - Should be checked whenever game is started
 
-5. Three Articles (NEW - Needs Implementation):
-   - three_articles: Set to true when articles_read >= 3
+5. Three Articles:
+   - three_articles: Set to true when articles_read >= 3 (unique articles)
    - Should be checked whenever articles_read is updated
 
 6. Course Completed (Triggered):
    - course_completed: Set to true when achievement_type='course_completed' is sent
-   - Triggered from frontend when a course reaches 100% (both MC and OE completed for all lessons)
-
-7. Daily Streak (LEGACY - Still tracked but not shown):
-   - Updates on every activity (add-xp calls)
-   - Increments streak_days if last_activity_date was yesterday
-   - Resets to 1 if gap > 1 day
-   - Updates max_streak if current streak exceeds it
+   - Triggered from frontend when a course reaches 100%
 
 --------------------------------------------------------------------------------
 ENDPOINT REQUIREMENTS
@@ -132,41 +147,40 @@ Existing Endpoints (Already Implemented):
 - POST /make-server-ff90fa65/increment-game
 - POST /make-server-ff90fa65/increment-question
 - POST /make-server-ff90fa65/update-achievements
+- POST /make-server-ff90fa65/update-recent-courses
+- POST /make-server-ff90fa65/increment-articles
 
 New Endpoint Requirements:
 
-1. POST /make-server-ff90fa65/update-recent-courses
-   Body: { course_id: string }
+1. POST /make-server-ff90fa65/start-game
+   Body: { game_id: string }
    Logic:
-   - Add course_id to beginning of recent_courses array
-   - Remove duplicates (keep most recent)
-   - Limit to max 3 courses
-   - Example: ["3", "1", "2"]
+   - Add game_id to games_list if not already present
+   - If unique, increment games_played
+   - Check if games_played >= 5, set achievements.five_games = true
 
-2. POST /make-server-ff90fa65/increment-articles
-   Body: { article_id?: string } // Optional tracking
+2. POST /make-server-ff90fa65/read-article
+   Body: { article_id: string }
    Logic:
-   - Increment articles_read by 1
+   - Add article_id to articles_list if not already present
+   - If unique, increment articles_read
    - Check if articles_read >= 3, set achievements.three_articles = true
-   - Call checkAchievements()
 
-Updates Needed to Existing Endpoints:
+3. POST /make-server-ff90fa65/update-clicker
+   Body: { money, money_per_second, buildings }
+   Logic:
+   - Update corporate_clicker state
+   - Calculate idle earnings based on time elapsed
 
-1. /make-server-ff90fa65/update-achievements
-   Add cases for:
-   - case 'five_games': Check if total_games_completed >= 5
-   - case 'three_articles': Check if articles_read >= 3
+4. GET /make-server-ff90fa65/anon-profile
+   Query: cookie_id
+   Logic:
+   - Get or create anonymous user profile from KV store
 
-2. /make-server-ff90fa65/increment-game
-   After incrementing games_played:
-   - Also increment achievements.total_games_completed
-   - If first game, set achievements.first_game = true
-   - If total_games_completed >= 5, set achievements.five_games = true
-
-3. checkAchievements() function
-   Add checks for:
-   - if (userData.achievements.total_games_completed >= 5) achievements.five_games = true
-   - if (userData.articles_read >= 3) achievements.three_articles = true
+5. POST /make-server-ff90fa65/transfer-anon-data
+   Body: { cookie_id }
+   Logic:
+   - Transfer anonymous user data to authenticated user (only on signup)
 
 --------------------------------------------------------------------------------
 INITIALIZATION (signup endpoint)
@@ -180,6 +194,9 @@ When creating a new user, initialize with:
   feedback: [],
   full_name: full_name || '',
   games_played: 0,
+  games_list: [],
+  articles_read: 0,
+  articles_list: [],
   lesson_progress: {
     course_1: 0,
     course_2: 0,
@@ -189,18 +206,32 @@ When creating a new user, initialize with:
   },
   open_ended_questions_done: 0,
   multiple_choice_questions_done: 0,
-  completedMC: [],
-  completedOE: [],
-  recent_courses: [], // NEW
-  articles_read: 0, // NEW
+  completedMC: {},
+  completedOE: {},
+  recent_courses: [],
+  corporate_clicker: {
+    money: 0,
+    money_per_second: 0,
+    last_played: new Date().toISOString(),
+    buildings: {
+      developer: 0,
+      manager: 0,
+      shareholder: 0,
+      ceo: 0,
+      investor: 0,
+      board_member: 0,
+      venture_capitalist: 0,
+      hedge_fund: 0,
+      conglomerate: 0,
+      monopoly: 0,
+    }
+  },
   achievements: {
     first_lesson: false,
     first_game: false,
     course_completed: false,
-    five_games: false, // NEW
-    three_articles: false, // NEW
-    streak_days: 0,
-    max_streak: 0,
+    five_games: false,
+    three_articles: false,
     last_activity_date: null,
     total_lessons_completed: 0,
     total_games_completed: 0,
@@ -243,8 +274,6 @@ function checkAchievements(userData: any, xpGained: number = 0): void {
       course_completed: false,
       five_games: false,
       three_articles: false,
-      streak_days: 0,
-      max_streak: 0,
       last_activity_date: null,
       total_lessons_completed: 0,
       total_games_completed: 0,
@@ -258,11 +287,14 @@ function checkAchievements(userData: any, xpGained: number = 0): void {
 
   // Check for first lesson completion - lesson must appear in BOTH completedMC and completedOE
   if (!userData.achievements.first_lesson && userData.completedMC && userData.completedOE) {
-    const completedLessons = userData.completedMC.filter((lessonId: string) => 
-      userData.completedOE.includes(lessonId)
-    );
-    if (completedLessons.length > 0) {
-      userData.achievements.first_lesson = true;
+    // Check if both are objects (new format)
+    if (typeof userData.completedMC === 'object' && typeof userData.completedOE === 'object') {
+      const completedMCKeys = Object.keys(userData.completedMC);
+      const completedOEKeys = Object.keys(userData.completedOE);
+      const completedLessons = completedMCKeys.filter(lessonId => completedOEKeys.includes(lessonId));
+      if (completedLessons.length > 0) {
+        userData.achievements.first_lesson = true;
+      }
     }
   }
 
@@ -287,36 +319,9 @@ function checkAchievements(userData: any, xpGained: number = 0): void {
     userData.achievements.three_articles = true;
   }
 
-  // Update streak
+  // Update last activity date
   const today = new Date().toISOString().split('T')[0];
-  const lastActivity = userData.achievements.last_activity_date;
-
-  if (lastActivity !== today) {
-    if (lastActivity) {
-      const lastDate = new Date(lastActivity);
-      const todayDate = new Date(today);
-      const diffTime = todayDate.getTime() - lastDate.getTime();
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-
-      if (diffDays === 1) {
-        // Consecutive day
-        userData.achievements.streak_days += 1;
-      } else if (diffDays > 1) {
-        // Streak broken
-        userData.achievements.streak_days = 1;
-      }
-    } else {
-      // First activity
-      userData.achievements.streak_days = 1;
-    }
-
-    userData.achievements.last_activity_date = today;
-
-    // Update max streak
-    if (userData.achievements.streak_days > userData.achievements.max_streak) {
-      userData.achievements.max_streak = userData.achievements.streak_days;
-    }
-  }
+  userData.achievements.last_activity_date = today;
 }
 
 // Health check endpoint
@@ -365,6 +370,9 @@ app.post("/make-server-ff90fa65/signup", async (c) => {
       feedback: [],
       full_name: full_name || '',
       games_played: 0,
+      games_list: [],
+      articles_read: 0,
+      articles_list: [],
       lesson_progress: {
         course_1: 0,
         course_2: 0,
@@ -374,18 +382,32 @@ app.post("/make-server-ff90fa65/signup", async (c) => {
       },
       open_ended_questions_done: 0,
       multiple_choice_questions_done: 0,
-      completedMC: [],
-      completedOE: [],
-      recent_courses: [], // NEW
-      articles_read: 0, // NEW
+      completedMC: {},
+      completedOE: {},
+      recent_courses: [],
+      corporate_clicker: {
+        money: 0,
+        money_per_second: 0,
+        last_played: new Date().toISOString(),
+        buildings: {
+          developer: 0,
+          manager: 0,
+          shareholder: 0,
+          ceo: 0,
+          investor: 0,
+          board_member: 0,
+          venture_capitalist: 0,
+          hedge_fund: 0,
+          conglomerate: 0,
+          monopoly: 0,
+        }
+      },
       achievements: {
         first_lesson: false,
         first_game: false,
         course_completed: false,
-        five_games: false, // NEW
-        three_articles: false, // NEW
-        streak_days: 0,
-        max_streak: 0,
+        five_games: false,
+        three_articles: false,
         last_activity_date: null,
         total_lessons_completed: 0,
         total_games_completed: 0,
@@ -627,10 +649,17 @@ app.post("/make-server-ff90fa65/start-game", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
+    const { game_id } = await c.req.json();
     const currentData = await kv.get(`user:${user.id}`);
     
     if (!currentData) {
       return c.json({ error: 'User data not found' }, 404);
+    }
+
+    // Add game_id to games_list if not already present
+    if (!currentData.games_list.includes(game_id)) {
+      currentData.games_list.push(game_id);
+      currentData.games_played += 1;
     }
 
     // Set first_game achievement if this is the first game started
@@ -639,6 +668,13 @@ app.post("/make-server-ff90fa65/start-game", async (c) => {
       await kv.set(`user:${user.id}`, currentData);
       console.log(`[GAME STARTED] User ${user.id} - First game achievement unlocked`);
     }
+
+    // Check if games_played >= 5, set achievements.five_games = true
+    if (currentData.games_played >= 5) {
+      currentData.achievements.five_games = true;
+    }
+
+    await kv.set(`user:${user.id}`, currentData);
 
     return c.json({ success: true, first_game: currentData.achievements.first_game });
   } catch (error) {
@@ -665,7 +701,7 @@ app.post("/make-server-ff90fa65/increment-question", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
-    const { question_type, lesson_id } = await c.req.json(); // "multiple_choice" or "open_ended"
+    const { question_type, lesson_id, percentage } = await c.req.json(); // "multiple_choice" or "open_ended"
     const currentData = await kv.get(`user:${user.id}`);
     
     if (!currentData) {
@@ -673,20 +709,20 @@ app.post("/make-server-ff90fa65/increment-question", async (c) => {
     }
 
     // Ensure arrays exist
-    if (!currentData.completedMC) currentData.completedMC = [];
-    if (!currentData.completedOE) currentData.completedOE = [];
+    if (!currentData.completedMC) currentData.completedMC = {};
+    if (!currentData.completedOE) currentData.completedOE = {};
 
     if (question_type === 'multiple_choice') {
       currentData.multiple_choice_questions_done += 5; // Add 5 for MCQ section
       // Add lesson to completedMC if not already there
-      if (!currentData.completedMC.includes(lesson_id)) {
-        currentData.completedMC.push(lesson_id);
+      if (!currentData.completedMC[lesson_id] || currentData.completedMC[lesson_id] < percentage) {
+        currentData.completedMC[lesson_id] = percentage;
       }
     } else if (question_type === 'open_ended') {
       currentData.open_ended_questions_done += 1;
       // Add lesson to completedOE if not already there
-      if (!currentData.completedOE.includes(lesson_id)) {
-        currentData.completedOE.push(lesson_id);
+      if (!currentData.completedOE[lesson_id] || currentData.completedOE[lesson_id] < percentage) {
+        currentData.completedOE[lesson_id] = percentage;
       }
     }
 
@@ -740,8 +776,6 @@ app.post("/make-server-ff90fa65/update-achievements", async (c) => {
         course_completed: false,
         five_games: false, // NEW
         three_articles: false, // NEW
-        streak_days: 0,
-        max_streak: 0,
         last_activity_date: null,
         total_lessons_completed: 0,
         total_games_completed: 0,
@@ -881,8 +915,11 @@ app.post("/make-server-ff90fa65/increment-articles", async (c) => {
       return c.json({ error: 'User data not found' }, 404);
     }
 
-    // Increment articles_read by 1
-    currentData.articles_read += 1;
+    // Add article_id to articles_list if not already present
+    if (!currentData.articles_list.includes(article_id)) {
+      currentData.articles_list.push(article_id);
+      currentData.articles_read += 1;
+    }
 
     // Check if articles_read >= 3, set achievements.three_articles = true
     if (currentData.articles_read >= 3) {
@@ -904,6 +941,236 @@ app.post("/make-server-ff90fa65/increment-articles", async (c) => {
   } catch (error) {
     console.log('Increment articles error:', error);
     return c.json({ error: 'Failed to increment articles: ' + String(error) }, 500);
+  }
+});
+
+// Update corporate clicker endpoint
+app.post("/make-server-ff90fa65/update-clicker", async (c) => {
+  try {
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+    );
+
+    const accessToken = c.req.header('Authorization')?.split(' ')[1];
+    if (!accessToken) {
+      return c.json({ error: 'No authorization token' }, 401);
+    }
+
+    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
+    if (error || !user) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const { money, money_per_second, buildings } = await c.req.json();
+    const currentData = await kv.get(`user:${user.id}`);
+    
+    if (!currentData) {
+      return c.json({ error: 'User data not found' }, 404);
+    }
+
+    // Calculate idle earnings based on time elapsed
+    const lastPlayed = new Date(currentData.corporate_clicker.last_played);
+    const now = new Date();
+    const timeElapsed = (now.getTime() - lastPlayed.getTime()) / 1000; // in seconds
+    const idleEarnings = timeElapsed * currentData.corporate_clicker.money_per_second;
+
+    // Update corporate_clicker state
+    currentData.corporate_clicker.money += idleEarnings;
+    currentData.corporate_clicker.money_per_second = money_per_second;
+    currentData.corporate_clicker.buildings = buildings;
+    currentData.corporate_clicker.last_played = now.toISOString();
+
+    await kv.set(`user:${user.id}`, currentData);
+
+    console.log(`[CORPORATE CLICKER] User ${user.id} - Updated clicker state`);
+
+    return c.json({ 
+      success: true, 
+      corporate_clicker: currentData.corporate_clicker
+    });
+  } catch (error) {
+    console.log('Update clicker error:', error);
+    return c.json({ error: 'Failed to update clicker: ' + String(error) }, 500);
+  }
+});
+
+// Get anonymous user profile endpoint
+app.get("/make-server-ff90fa65/anon-profile", async (c) => {
+  try {
+    const cookie_id = c.req.query('cookie_id');
+    if (!cookie_id) {
+      return c.json({ error: 'No cookie_id provided' }, 400);
+    }
+
+    const userData = await kv.get(`anon:${cookie_id}`);
+    if (!userData) {
+      // Create new anonymous user profile
+      const newUserData = {
+        xp: 0,
+        rank: "Beginner",
+        user_id: cookie_id,
+        feedback: [],
+        full_name: '',
+        games_played: 0,
+        games_list: [],
+        articles_read: 0,
+        articles_list: [],
+        lesson_progress: {
+          course_1: 0,
+          course_2: 0,
+          course_3: 0,
+          course_4: 0,
+          course_5: 0,
+        },
+        open_ended_questions_done: 0,
+        multiple_choice_questions_done: 0,
+        completedMC: {},
+        completedOE: {},
+        recent_courses: [],
+        corporate_clicker: {
+          money: 0,
+          money_per_second: 0,
+          last_played: new Date().toISOString(),
+          buildings: {
+            developer: 0,
+            manager: 0,
+            shareholder: 0,
+            ceo: 0,
+            investor: 0,
+            board_member: 0,
+            venture_capitalist: 0,
+            hedge_fund: 0,
+            conglomerate: 0,
+            monopoly: 0,
+          }
+        },
+        achievements: {
+          first_lesson: false,
+          first_game: false,
+          course_completed: false,
+          five_games: false,
+          three_articles: false,
+          last_activity_date: null,
+          total_lessons_completed: 0,
+          total_games_completed: 0,
+          xp_milestones: {
+            '100': false,
+            '500': false,
+            '1000': false,
+          }
+        }
+      };
+
+      await kv.set(`anon:${cookie_id}`, newUserData);
+      console.log('[ANON PROFILE] New anonymous user profile created with ID:', cookie_id);
+
+      return c.json({ profile: newUserData });
+    }
+
+    return c.json({ profile: userData });
+  } catch (error) {
+    console.log('Anon profile fetch error:', error);
+    return c.json({ error: 'Failed to fetch anon profile: ' + String(error) }, 500);
+  }
+});
+
+// Transfer anonymous user data to authenticated user endpoint
+app.post("/make-server-ff90fa65/transfer-anon-data", async (c) => {
+  try {
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+    );
+
+    const accessToken = c.req.header('Authorization')?.split(' ')[1];
+    if (!accessToken) {
+      return c.json({ error: 'No authorization token' }, 401);
+    }
+
+    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
+    if (error || !user) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const { cookie_id } = await c.req.json();
+    const anonData = await kv.get(`anon:${cookie_id}`);
+    
+    if (!anonData) {
+      return c.json({ error: 'Anonymous user data not found' }, 404);
+    }
+
+    const currentData = await kv.get(`user:${user.id}`);
+    
+    if (!currentData) {
+      return c.json({ error: 'User data not found' }, 404);
+    }
+
+    // Merge anonymous user data with authenticated user data
+    const mergedData = {
+      ...currentData,
+      xp: currentData.xp + anonData.xp,
+      rank: currentData.rank,
+      user_id: currentData.user_id,
+      feedback: [...currentData.feedback, ...anonData.feedback],
+      full_name: currentData.full_name || anonData.full_name,
+      games_played: currentData.games_played + anonData.games_played,
+      games_list: [...currentData.games_list, ...anonData.games_list],
+      articles_read: currentData.articles_read + anonData.articles_read,
+      articles_list: [...currentData.articles_list, ...anonData.articles_list],
+      lesson_progress: {
+        course_1: Math.max(currentData.lesson_progress.course_1, anonData.lesson_progress.course_1),
+        course_2: Math.max(currentData.lesson_progress.course_2, anonData.lesson_progress.course_2),
+        course_3: Math.max(currentData.lesson_progress.course_3, anonData.lesson_progress.course_3),
+        course_4: Math.max(currentData.lesson_progress.course_4, anonData.lesson_progress.course_4),
+        course_5: Math.max(currentData.lesson_progress.course_5, anonData.lesson_progress.course_5),
+      },
+      open_ended_questions_done: currentData.open_ended_questions_done + anonData.open_ended_questions_done,
+      multiple_choice_questions_done: currentData.multiple_choice_questions_done + anonData.multiple_choice_questions_done,
+      completedMC: { ...currentData.completedMC, ...anonData.completedMC },
+      completedOE: { ...currentData.completedOE, ...anonData.completedOE },
+      recent_courses: [...currentData.recent_courses, ...anonData.recent_courses],
+      corporate_clicker: {
+        money: currentData.corporate_clicker.money + anonData.corporate_clicker.money,
+        money_per_second: Math.max(currentData.corporate_clicker.money_per_second, anonData.corporate_clicker.money_per_second),
+        last_played: new Date().toISOString(),
+        buildings: {
+          developer: currentData.corporate_clicker.buildings.developer + anonData.corporate_clicker.buildings.developer,
+          manager: currentData.corporate_clicker.buildings.manager + anonData.corporate_clicker.buildings.manager,
+          shareholder: currentData.corporate_clicker.buildings.shareholder + anonData.corporate_clicker.buildings.shareholder,
+          ceo: currentData.corporate_clicker.buildings.ceo + anonData.corporate_clicker.buildings.ceo,
+          investor: currentData.corporate_clicker.buildings.investor + anonData.corporate_clicker.buildings.investor,
+          board_member: currentData.corporate_clicker.buildings.board_member + anonData.corporate_clicker.buildings.board_member,
+          venture_capitalist: currentData.corporate_clicker.buildings.venture_capitalist + anonData.corporate_clicker.buildings.venture_capitalist,
+          hedge_fund: currentData.corporate_clicker.buildings.hedge_fund + anonData.corporate_clicker.buildings.hedge_fund,
+          conglomerate: currentData.corporate_clicker.buildings.conglomerate + anonData.corporate_clicker.buildings.conglomerate,
+          monopoly: currentData.corporate_clicker.buildings.monopoly + anonData.corporate_clicker.buildings.monopoly,
+        }
+      },
+      achievements: {
+        first_lesson: currentData.achievements.first_lesson || anonData.achievements.first_lesson,
+        first_game: currentData.achievements.first_game || anonData.achievements.first_game,
+        course_completed: currentData.achievements.course_completed || anonData.achievements.course_completed,
+        five_games: currentData.achievements.five_games || anonData.achievements.five_games,
+        three_articles: currentData.achievements.three_articles || anonData.achievements.three_articles,
+        last_activity_date: currentData.achievements.last_activity_date || anonData.achievements.last_activity_date,
+        total_lessons_completed: currentData.achievements.total_lessons_completed + anonData.achievements.total_lessons_completed,
+        total_games_completed: currentData.achievements.total_games_completed + anonData.achievements.total_games_completed,
+        xp_milestones: {
+          '100': currentData.achievements.xp_milestones['100'] || anonData.achievements.xp_milestones['100'],
+          '500': currentData.achievements.xp_milestones['500'] || anonData.achievements.xp_milestones['500'],
+          '1000': currentData.achievements.xp_milestones['1000'] || anonData.achievements.xp_milestones['1000'],
+        }
+      }
+    };
+
+    await kv.set(`user:${user.id}`, mergedData);
+    console.log('[TRANSFER ANON DATA] Anonymous user data transferred to authenticated user:', user.id);
+
+    return c.json({ success: true, profile: mergedData });
+  } catch (error) {
+    console.log('Transfer anon data error:', error);
+    return c.json({ error: 'Failed to transfer anon data: ' + String(error) }, 500);
   }
 });
 

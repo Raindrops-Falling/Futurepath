@@ -19,6 +19,53 @@ export function AIResumeChecker() {
   const [analyzed, setAnalyzed] = useState(false);
   const [overallScore, setOverallScore] = useState(0);
   const [feedback, setFeedback] = useState<Feedback[]>([]);
+  const [deepResponseLoading, setDeepResponseLoading] = useState(false);
+  const [deepResponse, setDeepResponse] = useState('');
+
+  const getDeepResponse = async () => {
+    setDeepResponseLoading(true);
+    setDeepResponse('');
+    
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          "Authorization": "Bearer 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",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          "model": "meta-llama/llama-3.2-3b-instruct",
+          "provider": {
+            "order": ["deepinfra"],
+            "allow_fallbacks": true
+          },
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an expert resume reviewer and career coach. Provide detailed, personalized feedback on resumes. Be constructive, specific, and actionable. Structure your response in clear sections covering: overall impression, strengths, areas for improvement, and specific recommendations."
+            },
+            {
+              "role": "user",
+              "content": `Please provide a comprehensive analysis of this resume:\n\n${resumeText}\n\nProvide detailed feedback on:\n1. Overall impression and marketability\n2. Key strengths\n3. Critical areas for improvement\n4. Specific actionable recommendations\n5. Industry-specific considerations (if applicable)`
+            }
+          ]
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const aiResponse = data.choices?.[0]?.message?.content || 'Unable to generate deep response.';
+        setDeepResponse(aiResponse);
+      } else {
+        setDeepResponse('Unable to generate deep response. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error getting deep response:', error);
+      setDeepResponse('Error generating deep response. Please try again.');
+    } finally {
+      setDeepResponseLoading(false);
+    }
+  };
 
   const analyzeResume = () => {
     // Simulate AI analysis
@@ -249,6 +296,25 @@ export function AIResumeChecker() {
                     </Card>
                   ))}
                 </div>
+
+                {/* Deep Response Button */}
+                <Button
+                  onClick={getDeepResponse}
+                  disabled={deepResponseLoading}
+                  className="w-full bg-black hover:bg-[#D4AF37] text-white"
+                >
+                  {deepResponseLoading ? 'Generating Deep Analysis...' : 'Get AI Deep Response'}
+                </Button>
+
+                {/* Deep Response Display */}
+                {deepResponse && (
+                  <Card className="p-6 border-2 border-[#D4AF37] bg-gradient-to-br from-white to-gray-50">
+                    <h3 className="text-2xl mb-4 text-[#D4AF37]">AI Deep Analysis</h3>
+                    <div className="prose prose-lg max-w-none text-gray-700 whitespace-pre-wrap">
+                      {deepResponse}
+                    </div>
+                  </Card>
+                )}
               </div>
             )}
           </motion.div>

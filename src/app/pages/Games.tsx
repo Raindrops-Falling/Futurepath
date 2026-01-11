@@ -4,8 +4,16 @@ import { Button } from '../components/ui/button';
 import { GeometricShapes } from '../components/GeometricShapes';
 import { Footer } from '../components/Footer';
 import { Link } from 'react-router-dom';
+import { Briefcase, Star } from 'lucide-react';
 
 export function Games() {
+  const highlightedGame = {
+    title: 'Corporate Clicker',
+    description: 'Build your corporate empire in this addictive idle clicker game! Click to earn money, purchase upgrades, and watch your business grow even while you\'re away.',
+    link: '/games/corporate-clicker',
+    features: ['Idle Income Generation', 'Multiple Upgrade Tiers', 'Progress Saves Automatically']
+  };
+
   const interactiveGames = [
     {
       title: 'Salary Negotiator',
@@ -75,6 +83,52 @@ export function Games() {
         >
           Interactive tools and simulations to accelerate your career development
         </motion.p>
+
+        {/* Highlighted Game Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="mb-24"
+        >
+          {/* Category Black Box with Geometric Background */}
+          <div className="bg-black text-white p-8 rounded-xl mb-12 relative overflow-hidden">
+            <GeometricShapes />
+            <div className="relative z-10 text-center">
+              <h2 className="text-3xl mb-3 text-[#D4AF37]">Featured Game</h2>
+              <p className="text-gray-300">
+                Engage in a fun and addictive idle clicker game to build and grow your corporate empire.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <motion.div
+              key={0}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.4, duration: 0.6 }}
+              className="relative z-20"
+            >
+              <Link to={highlightedGame.link}>
+                <Card className="p-6 border-2 border-black/10 hover:border-[#D4AF37] transition-all hover:shadow-xl group h-full flex flex-col text-center bg-white relative z-20">
+                  {/* Custom Icon */}
+                  <div className="mb-4 flex justify-center">
+                    <div className="w-16 h-16 bg-black group-hover:bg-[#D4AF37] transition-colors rounded-xl flex items-center justify-center">
+                      <Briefcase className="w-10 h-10 text-[#D4AF37] group-hover:text-black transition-colors" />
+                    </div>
+                  </div>
+                  
+                  <h3 className="text-xl mb-3 group-hover:text-[#D4AF37] transition-colors">{highlightedGame.title}</h3>
+                  <p className="text-gray-600 mb-6 flex-1">{highlightedGame.description}</p>
+                  <Button className="bg-[#D4AF37] hover:bg-[#B8941F] text-white w-full group-hover:scale-105 transition-all">
+                    Play Now
+                  </Button>
+                </Card>
+              </Link>
+            </motion.div>
+          </div>
+        </motion.div>
 
         {/* Interactive Games Section */}
         <motion.div

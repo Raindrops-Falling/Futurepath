@@ -48,11 +48,22 @@ export function Courses() {
   const calculateLessonProgress = (courseId: number, moduleId: number, lessonId: number): number => {
     if (!userProgress) return 0;
     const lessonKey = `${courseId}-${moduleId}-${lessonId}`;
-    const hasMC = userProgress.completedMC.includes(lessonKey);
-    const hasOE = userProgress.completedOE.includes(lessonKey);
     
-    if (hasMC && hasOE) return 100;
-    if (hasMC || hasOE) return 50;
+    // Check if completedMC and completedOE are objects (new format) or arrays (old format)
+    const mcProgress = userProgress.completedMC && typeof userProgress.completedMC === 'object' 
+      ? (lessonKey in userProgress.completedMC ? userProgress.completedMC[lessonKey] : 0)
+      : 0;
+    
+    const oeProgress = userProgress.completedOE && typeof userProgress.completedOE === 'object'
+      ? (lessonKey in userProgress.completedOE ? userProgress.completedOE[lessonKey] : 0)
+      : 0;
+    
+    // Return average of both percentages
+    if (mcProgress > 0 && oeProgress > 0) {
+      return Math.round((mcProgress + oeProgress) / 2);
+    }
+    if (mcProgress > 0) return Math.round(mcProgress / 2); // Only MC done, worth 50% of total
+    if (oeProgress > 0) return Math.round(oeProgress / 2); // Only OE done, worth 50% of total
     return 0;
   };
 

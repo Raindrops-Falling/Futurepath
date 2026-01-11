@@ -18,6 +18,7 @@ import { CareerSimulation } from './pages/games/CareerSimulation';
 import { InterviewSimulator } from './pages/games/InterviewSimulator';
 import { SalaryNegotiator } from './pages/games/SalaryNegotiator';
 import { CareerPathwayFinder } from './pages/games/CareerPathwayFinder';
+import { CorporateClicker } from './components/CorporateClicker';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -65,6 +66,7 @@ export default function App() {
                   <Route path="/games/ai-chatbot" element={<AIChatbot />} />
                   <Route path="/games/skill-gap-analyzer" element={<SkillGapAnalyzer />} />
                   <Route path="/games/ai-resume-checker" element={<AIResumeChecker />} />
+                  <Route path="/games/corporate-clicker" element={<CorporateClicker />} />
                   <Route 
                     path="/games/career-simulation" 
                     element={<CareerSimulation />} 
