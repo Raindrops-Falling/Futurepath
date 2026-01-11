@@ -33,14 +33,14 @@ export function Articles() {
   const handleArticleClick = async (article: Article) => {
     setSelectedArticle(article);
     
-    // Track article read if not already read and user is authenticated
-    if (!readArticles.has(article.id) && isAuthenticated) {
+    // Always track article read when user is authenticated (allow repeats)
+    if (isAuthenticated) {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
           const { projectId } = await import('../../utils/supabase/info');
           
-          // Call backend to increment articles_read counter
+          // Call backend to track article read with article title
           await fetch(
             `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-articles`,
             {
@@ -50,13 +50,10 @@ export function Articles() {
                 'Authorization': `Bearer ${session.access_token}`,
               },
               body: JSON.stringify({
-                article_id: article.id.toString()
+                article_id: article.title  // Use article title instead of ID
               })
             }
           );
-          
-          // Mark as read locally
-          setReadArticles(prev => new Set(prev).add(article.id));
         }
       } catch (error) {
         console.error('Error tracking article read:', error);

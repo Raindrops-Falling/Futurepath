@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -6,6 +6,7 @@ import { GeometricShapes } from '../../components/GeometricShapes';
 import { Footer } from '../../components/Footer';
 import { Send, Bot, User } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { supabase } from '../../lib/supabase';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -21,6 +22,35 @@ export function AIChatbot() {
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+
+  useEffect(() => {
+    // Track game click/start
+    const trackGameStart = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          const { projectId } = await import('../../../utils/supabase/info');
+          await fetch(
+            `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/start-game`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify({
+                game_id: 'ai-chatbot'
+              }),
+            }
+          );
+        }
+      } catch (error) {
+        console.error('Error tracking game start:', error);
+      }
+    };
+    
+    trackGameStart();
+  }, []);
 
   const handleSend = async () => {
     if (!input.trim()) return;

@@ -4,434 +4,70 @@ import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { GeometricShapes } from '../../components/GeometricShapes';
 import { Footer } from '../../components/Footer';
+import { ArrowRight, CheckCircle, Target } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import { Target, TrendingUp } from 'lucide-react';
-
-interface Question {
-  id: number;
-  text: string;
-  options: {
-    text: string;
-    dimensions: {
-      [key: string]: number;
-    };
-  }[];
-}
-
-interface CareerProfile {
-  name: string;
-  targetScores: {
-    WO_Systems: number;
-    WO_People: number;
-    WO_Ideas: number;
-    SP: number;
-    DS_Data: number;
-    DS_Collaborative: number;
-    DS_Intuition: number;
-    CI: number;
-    RT: number;
-    LS: number;
-    PP: number;
-  };
-  description: string;
-  keySkills: string[];
-}
-
-const QUESTIONS: Question[] = [
-  {
-    id: 1,
-    text: "You feel most satisfied after a workday when you've:",
-    options: [
-      { text: "Helped others solve problems", dimensions: { WO_People: 3 } },
-      { text: "Improved how something works", dimensions: { WO_Systems: 3 } },
-      { text: "Created or designed something", dimensions: { WO_Ideas: 3 } }
-    ]
-  },
-  {
-    id: 2,
-    text: "In group projects, you naturally focus on:",
-    options: [
-      { text: "Team dynamics and communication", dimensions: { WO_People: 3 } },
-      { text: "Process and execution", dimensions: { WO_Systems: 3 } },
-      { text: "Conceptual direction and ideas", dimensions: { WO_Ideas: 3 } }
-    ]
-  },
-  {
-    id: 3,
-    text: "Which task sounds most appealing?",
-    options: [
-      { text: "Coaching someone through a challenge", dimensions: { WO_People: 3 } },
-      { text: "Streamlining a messy workflow", dimensions: { WO_Systems: 3 } },
-      { text: "Brainstorming new approaches", dimensions: { WO_Ideas: 3 } }
-    ]
-  },
-  {
-    id: 4,
-    text: "When starting a task, you prefer:",
-    options: [
-      { text: "Clear rules and expectations", dimensions: { SP: 3 } },
-      { text: "Some guidance, some flexibility", dimensions: { SP: 2 } },
-      { text: "Freedom to define your own approach", dimensions: { SP: 1 } }
-    ]
-  },
-  {
-    id: 5,
-    text: "You work best when:",
-    options: [
-      { text: "Objectives are clearly defined", dimensions: { SP: 3 } },
-      { text: "Goals exist but methods vary", dimensions: { SP: 2 } },
-      { text: "The goal itself is open-ended", dimensions: { SP: 1 } }
-    ]
-  },
-  {
-    id: 6,
-    text: "Ambiguous instructions make you feel:",
-    options: [
-      { text: "Uncomfortable", dimensions: { SP: 3 } },
-      { text: "Neutral", dimensions: { SP: 2 } },
-      { text: "Energized", dimensions: { SP: 1 } }
-    ]
-  },
-  {
-    id: 7,
-    text: "You trust decisions most when they are:",
-    options: [
-      { text: "Backed by data", dimensions: { DS_Data: 3 } },
-      { text: "Discussed with others", dimensions: { DS_Collaborative: 3 } },
-      { text: "Guided by intuition", dimensions: { DS_Intuition: 3 } }
-    ]
-  },
-  {
-    id: 8,
-    text: "When choosing between options, you usually:",
-    options: [
-      { text: "Compare measurable outcomes", dimensions: { DS_Data: 3 } },
-      { text: "Consider people's input", dimensions: { DS_Collaborative: 3 } },
-      { text: "Go with what feels right", dimensions: { DS_Intuition: 3 } }
-    ]
-  },
-  {
-    id: 9,
-    text: "If a decision must be made quickly, you:",
-    options: [
-      { text: "Look for key facts", dimensions: { DS_Data: 3 } },
-      { text: "Ask others' opinions", dimensions: { DS_Collaborative: 3 } },
-      { text: "Rely on instinct", dimensions: { DS_Intuition: 3 } }
-    ]
-  },
-  {
-    id: 10,
-    text: "Your ideal role involves:",
-    options: [
-      { text: "Minimal communication", dimensions: { CI: 1 } },
-      { text: "Regular collaboration", dimensions: { CI: 2 } },
-      { text: "Frequent presenting or persuading", dimensions: { CI: 3 } }
-    ]
-  },
-  {
-    id: 11,
-    text: "You feel most confident when:",
-    options: [
-      { text: "Working independently", dimensions: { CI: 1 } },
-      { text: "Working with a small team", dimensions: { CI: 2 } },
-      { text: "Leading discussions", dimensions: { CI: 3 } }
-    ]
-  },
-  {
-    id: 12,
-    text: "Feedback is best delivered when it's:",
-    options: [
-      { text: "Written and specific", dimensions: { CI: 1 } },
-      { text: "Discussed interactively", dimensions: { CI: 2 } },
-      { text: "Open and conversational", dimensions: { CI: 3 } }
-    ]
-  },
-  {
-    id: 13,
-    text: "You value:",
-    options: [
-      { text: "Stability and predictability", dimensions: { RT: 1 } },
-      { text: "Balance between safety and growth", dimensions: { RT: 2 } },
-      { text: "Opportunity even if uncertain", dimensions: { RT: 3 } }
-    ]
-  },
-  {
-    id: 14,
-    text: "A career path with unclear outcomes sounds:",
-    options: [
-      { text: "Stressful", dimensions: { RT: 1 } },
-      { text: "Acceptable", dimensions: { RT: 2 } },
-      { text: "Exciting", dimensions: { RT: 3 } }
-    ]
-  },
-  {
-    id: 15,
-    text: "You're more motivated by:",
-    options: [
-      { text: "Security", dimensions: { RT: 1 } },
-      { text: "Progression", dimensions: { RT: 2 } },
-      { text: "Possibility", dimensions: { RT: 3 } }
-    ]
-  },
-  {
-    id: 16,
-    text: "You improve fastest when feedback is:",
-    options: [
-      { text: "Structured and measurable", dimensions: { LS: 1 } },
-      { text: "Ongoing and conversational", dimensions: { LS: 2 } },
-      { text: "Open-ended and exploratory", dimensions: { LS: 3 } }
-    ]
-  },
-  {
-    id: 17,
-    text: "When learning a new skill, you prefer:",
-    options: [
-      { text: "Step-by-step instruction", dimensions: { LS: 1 } },
-      { text: "Practice with guidance", dimensions: { LS: 2 } },
-      { text: "Experimentation", dimensions: { LS: 3 } }
-    ]
-  },
-  {
-    id: 18,
-    text: "Mistakes are best viewed as:",
-    options: [
-      { text: "Something to minimize", dimensions: { LS: 1 } },
-      { text: "Part of learning", dimensions: { LS: 2 } },
-      { text: "A discovery tool", dimensions: { LS: 3 } }
-    ]
-  },
-  {
-    id: 19,
-    text: "You perform best in environments that are:",
-    options: [
-      { text: "Predictable", dimensions: { PP: 1 } },
-      { text: "Moderately dynamic", dimensions: { PP: 2 } },
-      { text: "Fast-paced", dimensions: { PP: 3 } }
-    ]
-  },
-  {
-    id: 20,
-    text: "Deadlines make you:",
-    options: [
-      { text: "Anxious", dimensions: { PP: 1 } },
-      { text: "Focused", dimensions: { PP: 2 } },
-      { text: "Energized", dimensions: { PP: 3 } }
-    ]
-  },
-  {
-    id: 21,
-    text: "Your ideal workload feels:",
-    options: [
-      { text: "Steady", dimensions: { PP: 1 } },
-      { text: "Variable", dimensions: { PP: 2 } },
-      { text: "Intense", dimensions: { PP: 3 } }
-    ]
-  },
-  {
-    id: 22,
-    text: "You'd rather:",
-    options: [
-      { text: "Improve an existing system", dimensions: { WO_Systems: 2 } },
-      { text: "Manage people and goals", dimensions: { WO_People: 2 } },
-      { text: "Build something new", dimensions: { WO_Ideas: 2 } }
-    ]
-  },
-  {
-    id: 23,
-    text: "You measure success by:",
-    options: [
-      { text: "Consistency", dimensions: { SP: 2, PP: 1 } },
-      { text: "Impact", dimensions: { WO_People: 2, CI: 2 } },
-      { text: "Innovation", dimensions: { WO_Ideas: 2, RT: 2 } }
-    ]
-  },
-  {
-    id: 24,
-    text: "You are most motivated by:",
-    options: [
-      { text: "Mastery", dimensions: { WO_Systems: 2, LS: 1 } },
-      { text: "Leadership", dimensions: { WO_People: 2, CI: 2 } },
-      { text: "Creativity", dimensions: { WO_Ideas: 2, RT: 2 } }
-    ]
-  }
-];
-
-const CAREER_PROFILES: CareerProfile[] = [
-  {
-    name: "Corporate / Operations",
-    targetScores: {
-      WO_Systems: 80,
-      WO_People: 40,
-      WO_Ideas: 40,
-      SP: 80,
-      DS_Data: 80,
-      DS_Collaborative: 50,
-      DS_Intuition: 30,
-      CI: 50,
-      RT: 30,
-      LS: 30,
-      PP: 40
-    },
-    description: "Excel in structured environments optimizing processes and systems. Strong analytical mindset with focus on efficiency and consistency.",
-    keySkills: ["Process optimization", "Data analysis", "Project management", "Quality control"]
-  },
-  {
-    name: "Business & Management",
-    targetScores: {
-      WO_Systems: 60,
-      WO_People: 70,
-      WO_Ideas: 50,
-      SP: 60,
-      DS_Data: 50,
-      DS_Collaborative: 80,
-      DS_Intuition: 50,
-      CI: 80,
-      RT: 60,
-      LS: 60,
-      PP: 70
-    },
-    description: "Lead teams and drive business objectives. Balance people management with strategic thinking and data-driven decision making.",
-    keySkills: ["Team leadership", "Strategic planning", "Communication", "Performance management"]
-  },
-  {
-    name: "Technology & Systems",
-    targetScores: {
-      WO_Systems: 90,
-      WO_People: 30,
-      WO_Ideas: 60,
-      SP: 60,
-      DS_Data: 80,
-      DS_Collaborative: 40,
-      DS_Intuition: 40,
-      CI: 40,
-      RT: 60,
-      LS: 80,
-      PP: 60
-    },
-    description: "Build and maintain technical systems. Strong problem-solving abilities with focus on innovation and continuous learning.",
-    keySkills: ["Technical skills", "Problem solving", "System design", "Continuous learning"]
-  },
-  {
-    name: "Creative & Media",
-    targetScores: {
-      WO_Systems: 30,
-      WO_People: 50,
-      WO_Ideas: 90,
-      SP: 30,
-      DS_Data: 30,
-      DS_Collaborative: 50,
-      DS_Intuition: 80,
-      CI: 60,
-      RT: 70,
-      LS: 80,
-      PP: 60
-    },
-    description: "Generate original content and creative solutions. Thrive in flexible environments that value innovation and artistic expression.",
-    keySkills: ["Creative thinking", "Content creation", "Design", "Storytelling"]
-  },
-  {
-    name: "Healthcare & Service",
-    targetScores: {
-      WO_Systems: 40,
-      WO_People: 90,
-      WO_Ideas: 40,
-      SP: 70,
-      DS_Data: 50,
-      DS_Collaborative: 80,
-      DS_Intuition: 50,
-      CI: 60,
-      RT: 30,
-      LS: 60,
-      PP: 80
-    },
-    description: "Help others and make direct positive impact. Combine empathy with structured procedures in high-stakes environments.",
-    keySkills: ["Empathy", "Patient care", "Communication", "Stress management"]
-  },
-  {
-    name: "Entrepreneurship / Startups",
-    targetScores: {
-      WO_Systems: 60,
-      WO_People: 60,
-      WO_Ideas: 80,
-      SP: 30,
-      DS_Data: 60,
-      DS_Collaborative: 60,
-      DS_Intuition: 70,
-      CI: 80,
-      RT: 90,
-      LS: 80,
-      PP: 90
-    },
-    description: "Build new ventures and drive innovation. Comfortable with uncertainty and rapid change while balancing multiple priorities.",
-    keySkills: ["Vision", "Risk taking", "Adaptability", "Resourcefulness"]
-  },
-  {
-    name: "Research & Analysis",
-    targetScores: {
-      WO_Systems: 80,
-      WO_People: 30,
-      WO_Ideas: 60,
-      SP: 70,
-      DS_Data: 90,
-      DS_Collaborative: 40,
-      DS_Intuition: 30,
-      CI: 30,
-      RT: 50,
-      LS: 70,
-      PP: 40
-    },
-    description: "Investigate complex problems and generate insights. Deep analytical skills with methodical approach to knowledge generation.",
-    keySkills: ["Research methods", "Data analysis", "Critical thinking", "Writing"]
-  },
-  {
-    name: "Education & Training",
-    targetScores: {
-      WO_Systems: 40,
-      WO_People: 80,
-      WO_Ideas: 70,
-      SP: 60,
-      DS_Data: 40,
-      DS_Collaborative: 80,
-      DS_Intuition: 50,
-      CI: 80,
-      RT: 40,
-      LS: 70,
-      PP: 60
-    },
-    description: "Share knowledge and develop others' potential. Combine subject expertise with strong interpersonal skills and patience.",
-    keySkills: ["Teaching", "Curriculum design", "Communication", "Mentorship"]
-  }
-];
 
 export function CareerPathwayFinder() {
   const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [answers, setAnswers] = useState<{ [key: number]: number }>({});
+  const [answers, setAnswers] = useState<string[]>([]);
+  const [showResults, setShowResults] = useState(false);
+  const [careerPath, setCareerPath] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
   const [dimensionScores, setDimensionScores] = useState<{ [key: string]: number }>({});
-  const [results, setResults] = useState<{ career: CareerProfile; score: number; confidence: string }[]>([]);
+  const [results, setResults] = useState<any[]>([]);
   const [isComplete, setIsComplete] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
+    // Check auth state
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setIsAuthenticated(!!session?.user);
+    };
     checkAuth();
+    
+    // Track game click/start
+    const trackGameStart = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          const { projectId } = await import('../../../utils/supabase/info');
+          await fetch(
+            `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/start-game`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify({
+                game_id: 'career-pathway-finder'
+              }),
+            }
+          );
+        }
+      } catch (error) {
+        console.error('Error tracking game start:', error);
+      }
+    };
+    
+    trackGameStart();
   }, []);
 
-  const checkAuth = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    setIsAuthenticated(!!session?.user);
-  };
-
-  const handleAnswer = (optionIndex: number) => {
-    const newAnswers = { ...answers, [currentQuestion]: optionIndex };
+  const handleAnswer = (option: string) => {
+    const newAnswers = [...answers, option];
     setAnswers(newAnswers);
 
     if (currentQuestion < QUESTIONS.length - 1) {
       setCurrentQuestion(currentQuestion + 1);
     } else {
-      calculateResults(newAnswers);
+      setIsGenerating(true);
+      generateCareerPath(newAnswers);
     }
   };
 
-  const calculateResults = async (finalAnswers: { [key: number]: number }) => {
+  const generateCareerPath = async (finalAnswers: string[]) => {
     // Step 1: Calculate dimension scores
     const scores: { [key: string]: number } = {};
     
@@ -467,8 +103,6 @@ export function CareerPathwayFinder() {
       const maxPossible = maxScores[dim] * questionCount;
       normalizedScores[dim] = Math.round((score / maxPossible) * 100);
     });
-
-    setDimensionScores(normalizedScores);
 
     // Step 2: Calculate fit scores for each career
     const careerFits = CAREER_PROFILES.map(career => {
@@ -537,7 +171,7 @@ export function CareerPathwayFinder() {
 
   const resetAssessment = () => {
     setCurrentQuestion(0);
-    setAnswers({});
+    setAnswers([]);
     setDimensionScores({});
     setResults([]);
     setIsComplete(false);
@@ -744,3 +378,72 @@ export function CareerPathwayFinder() {
     </div>
   );
 }
+
+const QUESTIONS = [
+  {
+    text: "When solving a problem, I prefer to...",
+    options: [
+      { text: "Work with numbers and data", dimensions: { analytical: 3, technical: 2 } },
+      { text: "Focus on how people are affected", dimensions: { people: 3, creative: 1 } },
+      { text: "Find innovative solutions", dimensions: { creative: 3, analytical: 1 } },
+      { text: "Follow proven methods", dimensions: { technical: 2, analytical: 1 } }
+    ]
+  },
+  {
+    text: "I feel most energized when...",
+    options: [
+      { text: "Working independently on complex tasks", dimensions: { technical: 2, analytical: 2 } },
+      { text: "Collaborating with others", dimensions: { people: 3, creative: 1 } },
+      { text: "Creating something new", dimensions: { creative: 3 } },
+      { text: "Organizing and planning", dimensions: { analytical: 2, technical: 1 } }
+    ]
+  },
+  {
+    text: "In a team setting, I naturally...",
+    options: [
+      { text: "Take charge and lead", dimensions: { people: 2, analytical: 1 } },
+      { text: "Support and encourage others", dimensions: { people: 3 } },
+      { text: "Focus on the technical details", dimensions: { technical: 3 } },
+      { text: "Generate new ideas", dimensions: { creative: 3 } }
+    ]
+  }
+];
+
+const CAREER_PROFILES = [
+  {
+    name: "Technical Specialist",
+    description: "Focus on technical systems, coding, and problem-solving through technology.",
+    keySkills: ["Programming", "System Design", "Debugging"],
+    targetScores: { technical: 70, analytical: 60, creative: 40, people: 30 }
+  },
+  {
+    name: "People Manager",
+    description: "Lead teams, develop talent, and foster collaborative work environments.",
+    keySkills: ["Leadership", "Communication", "Team Building"],
+    targetScores: { people: 80, analytical: 50, creative: 40, technical: 30 }
+  },
+  {
+    name: "Creative Professional",
+    description: "Design innovative solutions and create compelling content or experiences.",
+    keySkills: ["Design Thinking", "Innovation", "Storytelling"],
+    targetScores: { creative: 80, people: 40, analytical: 40, technical: 30 }
+  },
+  {
+    name: "Data Analyst",
+    description: "Analyze complex datasets to drive strategic business decisions.",
+    keySkills: ["Data Analysis", "Statistics", "Business Intelligence"],
+    targetScores: { analytical: 80, technical: 60, creative: 30, people: 40 }
+  },
+  {
+    name: "Project Coordinator",
+    description: "Organize projects, manage timelines, and ensure successful delivery.",
+    keySkills: ["Organization", "Planning", "Coordination"],
+    targetScores: { analytical: 60, people: 60, technical: 40, creative: 40 }
+  },
+  {
+    name: "Consultant",
+    description: "Advise clients on strategic decisions and business improvements.",
+    keySkills: ["Problem Solving", "Communication", "Strategy"],
+    targetScores: { analytical: 70, people: 60, creative: 50, technical: 40 }
+  }
+];

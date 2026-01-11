@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -7,6 +7,7 @@ import { GeometricShapes } from '../../components/GeometricShapes';
 import { Footer } from '../../components/Footer';
 import { CheckCircle, XCircle, Target } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { supabase } from '../../lib/supabase';
 
 interface Skill {
   name: string;
@@ -20,6 +21,34 @@ export function SkillGapAnalyzer() {
   const [currentSkills, setCurrentSkills] = useState<string[]>([]);
   const [analyzed, setAnalyzed] = useState(false);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+
+  useEffect(() => {
+    trackGameStart();
+  }, []);
+
+  const trackGameStart = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        const { projectId } = await import('../../../utils/supabase/info');
+        await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/start-game`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              game_id: 'skill-gap-analyzer'
+            }),
+          }
+        );
+      }
+    } catch (error) {
+      console.error('Error tracking game start:', error);
+    }
+  };
 
   const roles = [
     'Software Developer',

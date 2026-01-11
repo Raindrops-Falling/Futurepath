@@ -52,11 +52,36 @@ export function InterviewSimulator() {
 
   useEffect(() => {
     checkAuth();
+    trackGameStart();
   }, []);
 
   const checkAuth = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     setIsAuthenticated(!!session?.user);
+  };
+
+  const trackGameStart = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        const { projectId } = await import('../../../utils/supabase/info');
+        await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/start-game`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              game_id: 'interview-simulator'
+            }),
+          }
+        );
+      }
+    } catch (error) {
+      console.error('Error tracking game start:', error);
+    }
   };
 
   const startInterview = (type: string) => {

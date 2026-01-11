@@ -17,7 +17,7 @@ KV STORE DATA STRUCTURE
 --------------------------------------------------------------------------------
 
 Key Format: `user:{user_id}` for authenticated users
-Key Format: `anon:{cookie_id}` for anonymous users
+Key Format: `anon:{cookie_id}` for anonymous users (TRACKING ONLY - NOT MERGED)
 
 Value Structure (JSON):
 {
@@ -29,21 +29,21 @@ Value Structure (JSON):
   
   // Progress Tracking
   games_played: number, // Count of UNIQUE games played
-  games_list: string[], // List of all game IDs visited
+  games_list: string[], // List of all unique game IDs visited
   articles_read: number, // Count of UNIQUE articles read
-  articles_list: string[], // List of all article IDs visited
+  articles_list: string[], // List of all unique article IDs visited
   
   lesson_progress: {
-    course_1: number, // Percentage 0-100
+    course_1: number, // Percentage 0-100 (auto-calculated from lesson completion)
     course_2: number,
     course_3: number,
     course_4: number,
     course_5: number,
   },
   
-  // Question Tracking - NEW FORMAT: Object with lesson_id:percentage
-  open_ended_questions_done: number,
-  multiple_choice_questions_done: number,
+  // Question Tracking - Object with lesson_id:percentage
+  open_ended_questions_done: number, // Total count (includes retries)
+  multiple_choice_questions_done: number, // Total count (includes retries)
   completedMC: { [key: string]: number }, // { "1-1-1": 60, "1-1-2": 100, ... }
   completedOE: { [key: string]: number }, // { "1-1-1": 50, "3-3-1": 100, ... }
   
@@ -138,49 +138,28 @@ via the /update-achievements endpoint. Here's the logic:
 ENDPOINT REQUIREMENTS
 --------------------------------------------------------------------------------
 
-Existing Endpoints (Already Implemented):
+Implemented Endpoints:
 - POST /make-server-ff90fa65/signup
 - GET /make-server-ff90fa65/profile
 - PUT /make-server-ff90fa65/profile
 - POST /make-server-ff90fa65/add-xp
-- POST /make-server-ff90fa65/update-lesson-progress
+- POST /make-server-ff90fa65/update-lesson-progress (manual progress update)
+- POST /make-server-ff90fa65/update-course-progress (auto-calculates based on lessons)
 - POST /make-server-ff90fa65/increment-game
+- POST /make-server-ff90fa65/start-game
 - POST /make-server-ff90fa65/increment-question
 - POST /make-server-ff90fa65/update-achievements
 - POST /make-server-ff90fa65/update-recent-courses
 - POST /make-server-ff90fa65/increment-articles
+- POST /make-server-ff90fa65/update-clicker
+- GET /make-server-ff90fa65/anon-profile
 
-New Endpoint Requirements:
-
-1. POST /make-server-ff90fa65/start-game
-   Body: { game_id: string }
-   Logic:
-   - Add game_id to games_list if not already present
-   - If unique, increment games_played
-   - Check if games_played >= 5, set achievements.five_games = true
-
-2. POST /make-server-ff90fa65/read-article
-   Body: { article_id: string }
-   Logic:
-   - Add article_id to articles_list if not already present
-   - If unique, increment articles_read
-   - Check if articles_read >= 3, set achievements.three_articles = true
-
-3. POST /make-server-ff90fa65/update-clicker
-   Body: { money, money_per_second, buildings }
-   Logic:
-   - Update corporate_clicker state
-   - Calculate idle earnings based on time elapsed
-
-4. GET /make-server-ff90fa65/anon-profile
-   Query: cookie_id
-   Logic:
-   - Get or create anonymous user profile from KV store
-
-5. POST /make-server-ff90fa65/transfer-anon-data
-   Body: { cookie_id }
-   Logic:
-   - Transfer anonymous user data to authenticated user (only on signup)
+Important Notes:
+- XP is only awarded on FIRST completion of questions, NOT on retries
+- Retry mode updates completedMC/completedOE values but does NOT award XP
+- Retries DO increment question counts (for profile stats)
+- Course progress auto-calculates based on completed lessons (both MC + OE)
+- Anonymous user data is for TRACKING ONLY and is NOT merged on signup
 
 --------------------------------------------------------------------------------
 INITIALIZATION (signup endpoint)
@@ -585,6 +564,58 @@ app.post("/make-server-ff90fa65/update-lesson-progress", async (c) => {
   }
 });
 
+// Update course progress endpoint (based on lesson completion)
+app.post("/make-server-ff90fa65/update-course-progress", async (c) => {
+  try {
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+    );
+
+    const accessToken = c.req.header('Authorization')?.split(' ')[1];
+    if (!accessToken) {
+      return c.json({ error: 'No authorization token' }, 401);
+    }
+
+    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
+    if (error || !user) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const { course_id, percentage } = await c.req.json();
+    const currentData = await kv.get(`user:${user.id}`);
+    
+    if (!currentData) {
+      return c.json({ error: 'User data not found' }, 404);
+    }
+
+    // Ensure lesson_progress object exists
+    if (!currentData.lesson_progress) {
+      currentData.lesson_progress = {
+        course_1: 0,
+        course_2: 0,
+        course_3: 0,
+        course_4: 0,
+        course_5: 0,
+      };
+    }
+
+    // Directly store the percentage provided by the frontend
+    const courseKey = `course_${course_id}`;
+    if (currentData.lesson_progress[courseKey] !== undefined) {
+      currentData.lesson_progress[courseKey] = percentage;
+      await kv.set(`user:${user.id}`, currentData);
+      
+      console.log(`[COURSE PROGRESS] User ${user.id} - Course ${course_id}: ${percentage}%`);
+    }
+
+    return c.json({ success: true, progress: percentage, lesson_progress: currentData.lesson_progress });
+  } catch (error) {
+    console.log('Update course progress error:', error);
+    return c.json({ error: 'Failed to update course progress: ' + String(error) }, 500);
+  }
+});
+
 // Increment game played endpoint
 app.post("/make-server-ff90fa65/increment-game", async (c) => {
   try {
@@ -701,34 +732,39 @@ app.post("/make-server-ff90fa65/increment-question", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
-    const { question_type, lesson_id, percentage } = await c.req.json(); // "multiple_choice" or "open_ended"
+    const { question_type, lesson_id, percentage, is_retry, question_index } = await c.req.json(); // "multiple_choice" or "open_ended"
     const currentData = await kv.get(`user:${user.id}`);
     
     if (!currentData) {
       return c.json({ error: 'User data not found' }, 404);
     }
 
-    // Ensure arrays exist
+    // Ensure objects exist
     if (!currentData.completedMC) currentData.completedMC = {};
     if (!currentData.completedOE) currentData.completedOE = {};
 
     if (question_type === 'multiple_choice') {
+      // Always update the percentage (even on retry)
+      currentData.completedMC[lesson_id] = percentage;
+      
+      // Always increment count (including retries)
       currentData.multiple_choice_questions_done += 5; // Add 5 for MCQ section
-      // Add lesson to completedMC if not already there
-      if (!currentData.completedMC[lesson_id] || currentData.completedMC[lesson_id] < percentage) {
-        currentData.completedMC[lesson_id] = percentage;
-      }
     } else if (question_type === 'open_ended') {
-      currentData.open_ended_questions_done += 1;
-      // Add lesson to completedOE if not already there
-      if (!currentData.completedOE[lesson_id] || currentData.completedOE[lesson_id] < percentage) {
-        currentData.completedOE[lesson_id] = percentage;
+      // Initialize OE array if not exists [question1_score, question2_score]
+      if (!currentData.completedOE[lesson_id]) {
+        currentData.completedOE[lesson_id] = [0, 0];
       }
+      
+      // Update the specific question score (question_index is 0 or 1)
+      currentData.completedOE[lesson_id][question_index] = percentage;
+      
+      // Always increment count (including retries)
+      currentData.open_ended_questions_done += 1;
     }
 
     await kv.set(`user:${user.id}`, currentData);
 
-    console.log(`[QUESTION COMPLETED] User ${user.id} - ${question_type} for ${lesson_id}`);
+    console.log(`[QUESTION ${is_retry ? 'RETRY' : 'COMPLETED'}] User ${user.id} - ${question_type} for ${lesson_id}${question_type === 'open_ended' ? ` (Q${question_index})` : ''}: ${percentage}%`);
 
     return c.json({ 
       success: true, 
@@ -908,18 +944,19 @@ app.post("/make-server-ff90fa65/increment-articles", async (c) => {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 
-    const { article_id } = await c.req.json(); // Optional tracking
+    const { article_id } = await c.req.json(); // article_id is now the article title
     const currentData = await kv.get(`user:${user.id}`);
     
     if (!currentData) {
       return c.json({ error: 'User data not found' }, 404);
     }
 
-    // Add article_id to articles_list if not already present
-    if (!currentData.articles_list.includes(article_id)) {
-      currentData.articles_list.push(article_id);
-      currentData.articles_read += 1;
-    }
+    // Always add article_id to articles_list (allow repeats)
+    currentData.articles_list.push(article_id);
+    
+    // Count unique articles for articles_read
+    const uniqueArticles = [...new Set(currentData.articles_list)];
+    currentData.articles_read = uniqueArticles.length;
 
     // Check if articles_read >= 3, set achievements.three_articles = true
     if (currentData.articles_read >= 3) {
@@ -931,7 +968,7 @@ app.post("/make-server-ff90fa65/increment-articles", async (c) => {
 
     await kv.set(`user:${user.id}`, currentData);
 
-    console.log(`[ARTICLES READ] User ${user.id} - Total articles read: ${currentData.articles_read}`);
+    console.log(`[ARTICLES READ] User ${user.id} - Total unique articles: ${currentData.articles_read}, Total reads: ${currentData.articles_list.length}`);
 
     return c.json({ 
       success: true, 
@@ -969,17 +1006,11 @@ app.post("/make-server-ff90fa65/update-clicker", async (c) => {
       return c.json({ error: 'User data not found' }, 404);
     }
 
-    // Calculate idle earnings based on time elapsed
-    const lastPlayed = new Date(currentData.corporate_clicker.last_played);
-    const now = new Date();
-    const timeElapsed = (now.getTime() - lastPlayed.getTime()) / 1000; // in seconds
-    const idleEarnings = timeElapsed * currentData.corporate_clicker.money_per_second;
-
-    // Update corporate_clicker state
-    currentData.corporate_clicker.money += idleEarnings;
+    // Update corporate_clicker state with values from frontend
+    currentData.corporate_clicker.money = money;
     currentData.corporate_clicker.money_per_second = money_per_second;
     currentData.corporate_clicker.buildings = buildings;
-    currentData.corporate_clicker.last_played = now.toISOString();
+    currentData.corporate_clicker.last_played = new Date().toISOString();
 
     await kv.set(`user:${user.id}`, currentData);
 
@@ -995,183 +1026,6 @@ app.post("/make-server-ff90fa65/update-clicker", async (c) => {
   }
 });
 
-// Get anonymous user profile endpoint
-app.get("/make-server-ff90fa65/anon-profile", async (c) => {
-  try {
-    const cookie_id = c.req.query('cookie_id');
-    if (!cookie_id) {
-      return c.json({ error: 'No cookie_id provided' }, 400);
-    }
 
-    const userData = await kv.get(`anon:${cookie_id}`);
-    if (!userData) {
-      // Create new anonymous user profile
-      const newUserData = {
-        xp: 0,
-        rank: "Beginner",
-        user_id: cookie_id,
-        feedback: [],
-        full_name: '',
-        games_played: 0,
-        games_list: [],
-        articles_read: 0,
-        articles_list: [],
-        lesson_progress: {
-          course_1: 0,
-          course_2: 0,
-          course_3: 0,
-          course_4: 0,
-          course_5: 0,
-        },
-        open_ended_questions_done: 0,
-        multiple_choice_questions_done: 0,
-        completedMC: {},
-        completedOE: {},
-        recent_courses: [],
-        corporate_clicker: {
-          money: 0,
-          money_per_second: 0,
-          last_played: new Date().toISOString(),
-          buildings: {
-            developer: 0,
-            manager: 0,
-            shareholder: 0,
-            ceo: 0,
-            investor: 0,
-            board_member: 0,
-            venture_capitalist: 0,
-            hedge_fund: 0,
-            conglomerate: 0,
-            monopoly: 0,
-          }
-        },
-        achievements: {
-          first_lesson: false,
-          first_game: false,
-          course_completed: false,
-          five_games: false,
-          three_articles: false,
-          last_activity_date: null,
-          total_lessons_completed: 0,
-          total_games_completed: 0,
-          xp_milestones: {
-            '100': false,
-            '500': false,
-            '1000': false,
-          }
-        }
-      };
-
-      await kv.set(`anon:${cookie_id}`, newUserData);
-      console.log('[ANON PROFILE] New anonymous user profile created with ID:', cookie_id);
-
-      return c.json({ profile: newUserData });
-    }
-
-    return c.json({ profile: userData });
-  } catch (error) {
-    console.log('Anon profile fetch error:', error);
-    return c.json({ error: 'Failed to fetch anon profile: ' + String(error) }, 500);
-  }
-});
-
-// Transfer anonymous user data to authenticated user endpoint
-app.post("/make-server-ff90fa65/transfer-anon-data", async (c) => {
-  try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-    );
-
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) {
-      return c.json({ error: 'No authorization token' }, 401);
-    }
-
-    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-    if (error || !user) {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
-
-    const { cookie_id } = await c.req.json();
-    const anonData = await kv.get(`anon:${cookie_id}`);
-    
-    if (!anonData) {
-      return c.json({ error: 'Anonymous user data not found' }, 404);
-    }
-
-    const currentData = await kv.get(`user:${user.id}`);
-    
-    if (!currentData) {
-      return c.json({ error: 'User data not found' }, 404);
-    }
-
-    // Merge anonymous user data with authenticated user data
-    const mergedData = {
-      ...currentData,
-      xp: currentData.xp + anonData.xp,
-      rank: currentData.rank,
-      user_id: currentData.user_id,
-      feedback: [...currentData.feedback, ...anonData.feedback],
-      full_name: currentData.full_name || anonData.full_name,
-      games_played: currentData.games_played + anonData.games_played,
-      games_list: [...currentData.games_list, ...anonData.games_list],
-      articles_read: currentData.articles_read + anonData.articles_read,
-      articles_list: [...currentData.articles_list, ...anonData.articles_list],
-      lesson_progress: {
-        course_1: Math.max(currentData.lesson_progress.course_1, anonData.lesson_progress.course_1),
-        course_2: Math.max(currentData.lesson_progress.course_2, anonData.lesson_progress.course_2),
-        course_3: Math.max(currentData.lesson_progress.course_3, anonData.lesson_progress.course_3),
-        course_4: Math.max(currentData.lesson_progress.course_4, anonData.lesson_progress.course_4),
-        course_5: Math.max(currentData.lesson_progress.course_5, anonData.lesson_progress.course_5),
-      },
-      open_ended_questions_done: currentData.open_ended_questions_done + anonData.open_ended_questions_done,
-      multiple_choice_questions_done: currentData.multiple_choice_questions_done + anonData.multiple_choice_questions_done,
-      completedMC: { ...currentData.completedMC, ...anonData.completedMC },
-      completedOE: { ...currentData.completedOE, ...anonData.completedOE },
-      recent_courses: [...currentData.recent_courses, ...anonData.recent_courses],
-      corporate_clicker: {
-        money: currentData.corporate_clicker.money + anonData.corporate_clicker.money,
-        money_per_second: Math.max(currentData.corporate_clicker.money_per_second, anonData.corporate_clicker.money_per_second),
-        last_played: new Date().toISOString(),
-        buildings: {
-          developer: currentData.corporate_clicker.buildings.developer + anonData.corporate_clicker.buildings.developer,
-          manager: currentData.corporate_clicker.buildings.manager + anonData.corporate_clicker.buildings.manager,
-          shareholder: currentData.corporate_clicker.buildings.shareholder + anonData.corporate_clicker.buildings.shareholder,
-          ceo: currentData.corporate_clicker.buildings.ceo + anonData.corporate_clicker.buildings.ceo,
-          investor: currentData.corporate_clicker.buildings.investor + anonData.corporate_clicker.buildings.investor,
-          board_member: currentData.corporate_clicker.buildings.board_member + anonData.corporate_clicker.buildings.board_member,
-          venture_capitalist: currentData.corporate_clicker.buildings.venture_capitalist + anonData.corporate_clicker.buildings.venture_capitalist,
-          hedge_fund: currentData.corporate_clicker.buildings.hedge_fund + anonData.corporate_clicker.buildings.hedge_fund,
-          conglomerate: currentData.corporate_clicker.buildings.conglomerate + anonData.corporate_clicker.buildings.conglomerate,
-          monopoly: currentData.corporate_clicker.buildings.monopoly + anonData.corporate_clicker.buildings.monopoly,
-        }
-      },
-      achievements: {
-        first_lesson: currentData.achievements.first_lesson || anonData.achievements.first_lesson,
-        first_game: currentData.achievements.first_game || anonData.achievements.first_game,
-        course_completed: currentData.achievements.course_completed || anonData.achievements.course_completed,
-        five_games: currentData.achievements.five_games || anonData.achievements.five_games,
-        three_articles: currentData.achievements.three_articles || anonData.achievements.three_articles,
-        last_activity_date: currentData.achievements.last_activity_date || anonData.achievements.last_activity_date,
-        total_lessons_completed: currentData.achievements.total_lessons_completed + anonData.achievements.total_lessons_completed,
-        total_games_completed: currentData.achievements.total_games_completed + anonData.achievements.total_games_completed,
-        xp_milestones: {
-          '100': currentData.achievements.xp_milestones['100'] || anonData.achievements.xp_milestones['100'],
-          '500': currentData.achievements.xp_milestones['500'] || anonData.achievements.xp_milestones['500'],
-          '1000': currentData.achievements.xp_milestones['1000'] || anonData.achievements.xp_milestones['1000'],
-        }
-      }
-    };
-
-    await kv.set(`user:${user.id}`, mergedData);
-    console.log('[TRANSFER ANON DATA] Anonymous user data transferred to authenticated user:', user.id);
-
-    return c.json({ success: true, profile: mergedData });
-  } catch (error) {
-    console.log('Transfer anon data error:', error);
-    return c.json({ error: 'Failed to transfer anon data: ' + String(error) }, 500);
-  }
-});
 
 Deno.serve(app.fetch);

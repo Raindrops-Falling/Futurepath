@@ -17,7 +17,7 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
   const [mcqAnswers, setMcqAnswers] = useState<(number | null)[]>(new Array(lesson.mcQuestions.length).fill(null));
   const [mcqSubmitted, setMcqSubmitted] = useState(false);
   const [openEndedAnswers, setOpenEndedAnswers] = useState<string[]>(new Array(lesson.openEndedQuestions.length).fill(''));
-  const [openEndedSubmitted, setOpenEndedSubmitted] = useState<boolean[]>(new Array(lesson.openEndedQuestions.length).fill(false));
+  const [openEndedSubmitted, setOpenEndedSubmitted] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [aiFeedbacks, setAiFeedbacks] = useState<string[]>(new Array(lesson.openEndedQuestions.length).fill(''));
   const [loadingFeedback, setLoadingFeedback] = useState<boolean[]>(new Array(lesson.openEndedQuestions.length).fill(false));
@@ -88,7 +88,7 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
 
   const handleRetryOE = () => {
     setOpenEndedAnswers(new Array(lesson.openEndedQuestions.length).fill(''));
-    setOpenEndedSubmitted(new Array(lesson.openEndedQuestions.length).fill(false));
+    setOpenEndedSubmitted(false);
     setAiFeedbacks(new Array(lesson.openEndedQuestions.length).fill(''));
     setRetryModeOE(true);
   };
@@ -197,8 +197,8 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
     // Calculate MC percentage
     const mcPercentage = calculateMCQScore();
     
-    // If user is authenticated and this is first completion, update backend
-    if (isAuthenticated && !mcqAlreadyCompleted && !retryModeMCQ) {
+    // Always track question completion (even on retry)
+    if (isAuthenticated) {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
@@ -217,33 +217,41 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
                 question_type: 'multiple_choice',
                 lesson_id: lessonId,
                 course_id: lesson.courseId,
-                percentage: mcPercentage
+                percentage: mcPercentage,
+                is_retry: retryModeMCQ || mcqAlreadyCompleted
               }),
             }
           );
 
           if (response.ok) {
             console.log('MCQ completion tracked successfully with percentage:', mcPercentage);
-            // Add XP based on percentage: (percentage/100) * base XP
-            const baseXP = lesson.mcQuestions.length * 1; // 1 XP per MCQ
-            const earnedXP = Math.round((mcPercentage / 100) * baseXP);
-            const xpResponse = await fetch(
-              `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
-              {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${session.access_token}`,
-                },
-                body: JSON.stringify({
-                  xp_amount: earnedXP
-                }),
-              }
-            );
             
-            if (xpResponse.ok) {
-              console.log('XP added for MCQ completion:', earnedXP);
+            // Only add XP on first completion (not on retry)
+            if (!mcqAlreadyCompleted && !retryModeMCQ) {
+              // Add XP based on percentage: (percentage/100) * base XP
+              const baseXP = lesson.mcQuestions.length * 1; // 1 XP per MCQ
+              const earnedXP = Math.round((mcPercentage / 100) * baseXP);
+              const xpResponse = await fetch(
+                `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`,
+                  },
+                  body: JSON.stringify({
+                    xp_amount: earnedXP
+                  }),
+                }
+              );
+              
+              if (xpResponse.ok) {
+                console.log('XP added for MCQ completion:', earnedXP);
+              }
             }
+            
+            // Update course progress
+            await updateCourseProgress(session.access_token, projectId);
           } else {
             console.error('Failed to track MCQ completion');
           }
@@ -255,142 +263,108 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
   };
 
   // Handle Open-Ended Question Submit
-  const handleOpenEndedSubmit = async (qIndex: number) => {
-    if (!openEndedAnswers[qIndex].trim()) {
-      const newFeedbacks = [...aiFeedbacks];
-      newFeedbacks[qIndex] = 'Please provide an answer before submitting.';
-      setAiFeedbacks(newFeedbacks);
-      return;
-    }
-
-    const newLoadingFeedback = [...loadingFeedback];
-    newLoadingFeedback[qIndex] = true;
-    setLoadingFeedback(newLoadingFeedback);
-    const newFeedbacks = [...aiFeedbacks];
-    newFeedbacks[qIndex] = '';
-    setAiFeedbacks(newFeedbacks);
+  const handleOpenEndedSubmit = async () => {
+    setLoadingFeedback(true);
+    setOpenEndedSubmitted(true);
 
     try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          "Authorization": `Bearer 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`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          "model": "meta-llama/llama-3.2-3b-instruct",
-          "provider": {
-            "order": ["deepinfra"],
-            "allow_fallbacks": true
+      // Get AI feedback for all questions in parallel
+      const feedbackPromises = lesson.openEndedQuestions.map(async (question, qIndex) => {
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            "Authorization": `Bearer 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`,
+            "Content-Type": "application/json"
           },
-          "messages": [
-            {
-              "role": "system",
-              "content": "You are an experienced career coach and teacher. Review the student's answer to the question and provide constructive, encouraging feedback in 3-4 sentences. Focus on being helpful and specific."
+          body: JSON.stringify({
+            "model": "meta-llama/llama-3.2-3b-instruct",
+            "provider": {
+              "order": ["deepinfra"],
+              "allow_fallbacks": true
             },
-            {
-              "role": "user",
-              "content": `Question: ${lesson.openEndedQuestions[qIndex].question}\n\nStudent's Answer: ${openEndedAnswers[qIndex]}\n\nProvide brief constructive feedback on this response.`
-            }
-          ]
-        })
+            "messages": [
+              {
+                "role": "system",
+                "content": "You are an experienced career coach and teacher. Review the student's answer to the question and provide constructive, encouraging feedback in 3-4 sentences. Focus on being helpful and specific."
+              },
+              {
+                "role": "user",
+                "content": `Question: ${question.question}\\n\\nStudent's Answer: ${openEndedAnswers[qIndex]}\\n\\nProvide brief constructive feedback on this response.`
+              }
+            ]
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const aiResponse = data.choices?.[0]?.message?.content || 'Unable to generate feedback.';
+          const answerLength = openEndedAnswers[qIndex].trim().length;
+          const score = answerLength < 10 ? 0 : 100;
+          return { feedback: aiResponse, score };
+        }
+        return { feedback: 'Unable to generate feedback.', score: 0 };
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        const aiResponse = data.choices?.[0]?.message?.content || 'Unable to generate feedback.';
-        
-        // Simple check: if answer is too short or obviously didn't answer, give 0, otherwise 100
-        const answerLength = openEndedAnswers[qIndex].trim().length;
-        const score = answerLength < 10 ? 0 : 100; // Less than 10 chars = didn't really answer
-        
-        const newFeedbacks = [...aiFeedbacks];
-        newFeedbacks[qIndex] = aiResponse;
-        setAiFeedbacks(newFeedbacks);
-        
-        const newScores = [...oeScores];
-        newScores[qIndex] = score;
-        setOeScores(newScores);
-        
-        // Mark as submitted
-        const newSubmitted = [...openEndedSubmitted];
-        newSubmitted[qIndex] = true;
-        setOpenEndedSubmitted(newSubmitted);
-        
-        // If all questions are submitted, send percentage to backend
-        if (newSubmitted.every(s => s)) {
-          const avgScore = newScores.reduce((a, b) => a + b, 0) / newScores.length;
-          
-          // If user is authenticated and this is first completion, update backend
-          if (isAuthenticated && !oeAlreadyCompleted && !retryModeOE && aiGeneratedOEs.length === 0) {
-            try {
-              const { data: { session } } = await supabase.auth.getSession();
-              if (session?.access_token) {
-                const { projectId } = await import('../../utils/supabase/info');
-                
-                // Call backend to increment OE questions with percentage
-                const backendResponse = await fetch(
-                  `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-question`,
-                  {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'Authorization': `Bearer ${session.access_token}`,
-                    },
-                    body: JSON.stringify({
-                      question_type: 'open_ended',
-                      lesson_id: lessonId,
-                      course_id: lesson.courseId,
-                      percentage: Math.round(avgScore)
-                    }),
-                  }
-                );
+      const results = await Promise.all(feedbackPromises);
+      const feedbacks = results.map(r => r.feedback);
+      const scores = results.map(r => r.score);
+      
+      setAiFeedbacks(feedbacks);
+      setOeScores(scores);
 
-                if (backendResponse.ok) {
-                  console.log('Open-ended completion tracked successfully with percentage:', Math.round(avgScore));
-                  // Add XP based on percentage
-                  const baseXP = lesson.openEndedQuestions.length * 2; // 2 XP per OE
-                  const earnedXP = Math.round((avgScore / 100) * baseXP);
-                  const xpResponse = await fetch(
-                    `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
-                    {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${session.access_token}`,
-                      },
-                      body: JSON.stringify({
-                        xp_amount: earnedXP
-                      }),
-                    }
-                  );
-                  
-                  if (xpResponse.ok) {
-                    console.log('XP added for OE completion:', earnedXP);
-                  }
-                } else {
-                  console.error('Failed to track open-ended completion');
-                }
+      // Track backend
+      if (isAuthenticated) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          const { projectId } = await import('../../utils/supabase/info');
+          
+          // Submit both questions
+          for (let qIndex = 0; qIndex < scores.length; qIndex++) {
+            await fetch(
+              `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-question`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({
+                  question_type: 'open_ended',
+                  lesson_id: lessonId,
+                  course_id: lesson.courseId,
+                  question_index: qIndex,
+                  percentage: scores[qIndex],
+                  is_retry: retryModeOE || oeAlreadyCompleted
+                }),
               }
-            } catch (error) {
-              console.error('Error tracking open-ended completion:', error);
+            );
+          }
+
+          // Add XP
+          if (!oeAlreadyCompleted && !retryModeOE && aiGeneratedOEs.length === 0) {
+            const earnedXP = scores.filter(s => s === 100).length;
+            if (earnedXP > 0) {
+              await fetch(
+                `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`,
+                  },
+                  body: JSON.stringify({ xp_amount: earnedXP }),
+                }
+              );
             }
           }
+          
+          await updateCourseProgress(session.access_token, projectId);
         }
-      } else {
-        const newFeedbacks = [...aiFeedbacks];
-        newFeedbacks[qIndex] = 'Unable to generate feedback.';
-        setAiFeedbacks(newFeedbacks);
       }
     } catch (error) {
       console.error('Error getting AI feedback:', error);
-      const newFeedbacks = [...aiFeedbacks];
-      newFeedbacks[qIndex] = 'Error generating feedback. Please try again.';
-      setAiFeedbacks(newFeedbacks);
     } finally {
-      const newLoadingFeedback = [...loadingFeedback];
-      newLoadingFeedback[qIndex] = false;
-      setLoadingFeedback(newLoadingFeedback);
+      setLoadingFeedback(false);
     }
   };
 
@@ -438,6 +412,97 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
         })}
       </div>
     );
+  };
+
+  const updateCourseProgress = async (accessToken: string, projectId: string) => {
+    try {
+      // Calculate the current course progress percentage based on completed lessons
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+      
+      // Fetch current user profile to get completedMC and completedOE
+      const profileResponse = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/profile`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+        }
+      );
+      
+      if (!profileResponse.ok) {
+        console.error('Failed to fetch profile for progress calculation');
+        return;
+      }
+      
+      const profileData = await profileResponse.json();
+      const completedMC = profileData.profile.completedMC || {};
+      const completedOE = profileData.profile.completedOE || {};
+      
+      // Import lessonsData to get actual lesson count
+      const { coursesData } = await import('../data/lessonsData');
+      const courseData = coursesData.find(c => c.id === lesson.courseId);
+      
+      if (!courseData) return;
+      
+      // Count total lessons and calculate progress
+      let totalLessons = 0;
+      let totalProgress = 0;
+      
+      courseData.modules.forEach((module: any) => {
+        module.lessons.forEach((lessonItem: any) => {
+          totalLessons++;
+          const lessonKey = `${lesson.courseId}-${module.id}-${lessonItem.id}`;
+          
+          // Calculate lesson progress (average of MC and OE percentages)
+          const mcProgress = completedMC[lessonKey] || 0;
+          const oeData = completedOE[lessonKey];
+          
+          // Handle new OE format [score1, score2] - average the two scores
+          let oeProgress = 0;
+          if (Array.isArray(oeData)) {
+            oeProgress = (oeData[0] + oeData[1]) / 2;
+          } else if (typeof oeData === 'number') {
+            oeProgress = oeData; // Fallback for old format
+          }
+          
+          if (mcProgress > 0 && oeProgress > 0) {
+            totalProgress += (mcProgress + oeProgress) / 2;
+          } else if (mcProgress > 0) {
+            totalProgress += mcProgress / 2;
+          } else if (oeProgress > 0) {
+            totalProgress += oeProgress / 2;
+          }
+        });
+      });
+      
+      const courseProgress = totalLessons > 0 ? Math.round(totalProgress / totalLessons) : 0;
+      
+      // Send the calculated percentage to backend
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/update-course-progress`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            course_id: lesson.courseId,
+            percentage: courseProgress
+          }),
+        }
+      );
+
+      if (response.ok) {
+        console.log('Course progress updated successfully to', courseProgress + '%');
+      } else {
+        console.error('Failed to update course progress');
+      }
+    } catch (error) {
+      console.error('Error updating course progress:', error);
+    }
   };
 
   return (
@@ -631,7 +696,7 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
           {currentSection === 'openended' && (
             <div className="space-y-6">
               {/* Show completion status if already completed */}
-              {oeAlreadyCompleted && !retryModeOE && !openEndedSubmitted.every(submitted => submitted) && aiGeneratedOEs.length === 0 && (
+              {oeAlreadyCompleted && !retryModeOE && !openEndedSubmitted && aiGeneratedOEs.length === 0 && (
                 <Card className="p-8 bg-black text-white border-2 border-[#D4AF37] relative overflow-hidden">
                   {/* Geometric Designs - Circles Only */}
                   <motion.div
@@ -675,11 +740,6 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
 
               {/* Render the appropriate questions */}
               {(aiGeneratedOEs.length > 0 ? aiGeneratedOEs : lesson.openEndedQuestions).map((question: any, qIndex: number) => {
-                // Check if ANY question is currently being processed
-                const isAnyQuestionLoading = loadingFeedback.some(loading => loading);
-                // Check if this specific question is loading
-                const isThisQuestionLoading = loadingFeedback[qIndex];
-                
                 return (
                   <Card 
                     key={qIndex} 
@@ -699,31 +759,14 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
                         newAnswers[qIndex] = e.target.value;
                         setOpenEndedAnswers(newAnswers);
                       }}
-                      disabled={openEndedSubmitted[qIndex] || (oeAlreadyCompleted && !retryModeOE) || (isAnyQuestionLoading && !isThisQuestionLoading)}
+                      disabled={openEndedSubmitted || (oeAlreadyCompleted && !retryModeOE)}
                       placeholder="Write your response here..."
                       className={`min-h-[200px] border-black/20 focus:border-[#D4AF37] ${
-                        (oeAlreadyCompleted && !retryModeOE) || (isAnyQuestionLoading && !isThisQuestionLoading)
-                          ? 'opacity-50 cursor-not-allowed' 
-                          : ''
+                        (oeAlreadyCompleted && !retryModeOE) ? 'opacity-50 cursor-not-allowed' : ''
                       }`}
                     />
                     
-                    {!openEndedSubmitted[qIndex] && (
-                      <Button
-                        onClick={() => handleOpenEndedSubmit(qIndex)}
-                        disabled={
-                          openEndedAnswers[qIndex]?.trim().length < 50 || 
-                          loadingFeedback[qIndex] || 
-                          (oeAlreadyCompleted && !retryModeOE) ||
-                          (isAnyQuestionLoading && !isThisQuestionLoading)
-                        }
-                        className="mt-4 bg-[#D4AF37] hover:bg-[#B8941F] text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {loadingFeedback[qIndex] ? 'Generating AI Feedback...' : 'Submit This Answer'}
-                      </Button>
-                    )}
-                    
-                    {openEndedSubmitted[qIndex] && aiFeedbacks[qIndex] && (
+                    {openEndedSubmitted && aiFeedbacks[qIndex] && (
                       <Card className="mt-4 p-6 bg-black text-white border-2 border-[#D4AF37] relative overflow-hidden">
                         {/* Geometric Designs */}
                         <motion.div
@@ -748,7 +791,15 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
                 );
               })}
               
-              {openEndedSubmitted.every(submitted => submitted) && (
+              {!openEndedSubmitted ? (
+                <Button 
+                  onClick={handleOpenEndedSubmit}
+                  disabled={openEndedAnswers.some(ans => ans.trim().length < 50) || loadingFeedback}
+                  className="w-full bg-[#D4AF37] hover:bg-[#B8941F] text-white disabled:opacity-50"
+                >
+                  {loadingFeedback ? 'Generating AI Feedback...' : 'Submit Answers'}
+                </Button>
+              ) : (
                 <Card className="p-8 bg-black text-white border-2 border-[#D4AF37] text-center">
                   <div className="flex items-center justify-center gap-3 mb-4">
                     <CheckCircle2 className="w-6 h-6 text-[#D4AF37]" />

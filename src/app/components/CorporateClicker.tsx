@@ -46,7 +46,32 @@ export function CorporateClicker() {
 
   useEffect(() => {
     checkAuthAndLoadProgress();
+    trackGameStart();
   }, []);
+
+  const trackGameStart = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        const { projectId } = await import('../../utils/supabase/info');
+        await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/start-game`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              game_id: 'corporate-clicker'
+            }),
+          }
+        );
+      }
+    } catch (error) {
+      console.error('Error tracking game start:', error);
+    }
+  };
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -152,6 +177,7 @@ export function CorporateClicker() {
   };
 
   const buyBuilding = (buildingIndex: number) => {
+    
     const building = buildingData[buildingIndex];
     const cost = calculateCost(building);
     
@@ -162,7 +188,11 @@ export function CorporateClicker() {
         ...prev,
         [buildingKey]: prev[buildingKey] + 1
       }));
+      
+      // Auto-save whenever a building is purchased
+      saveProgress();
     }
+    
   };
 
   const calculateCost = (building: Building) => {

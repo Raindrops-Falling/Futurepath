@@ -2,11 +2,11 @@ import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
-import { Progress } from '../../components/ui/progress';
 import { GeometricShapes } from '../../components/GeometricShapes';
 import { Footer } from '../../components/Footer';
+import { Briefcase, Award, Users, TrendingUp } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import { TrendingUp, Users, Briefcase, Target } from 'lucide-react';
 
 interface Attributes {
   skills: number;
@@ -344,11 +344,36 @@ export function CareerSimulation() {
 
   useEffect(() => {
     checkAuth();
+    trackGameStart();
   }, []);
 
   const checkAuth = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     setIsAuthenticated(!!session?.user);
+  };
+
+  const trackGameStart = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        const { projectId } = await import('../../../utils/supabase/info');
+        await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/start-game`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              game_id: 'career-simulation'
+            }),
+          }
+        );
+      }
+    } catch (error) {
+      console.error('Error tracking game start:', error);
+    }
   };
 
   const handleChoice = async (effects: Partial<Attributes>) => {
@@ -471,9 +496,9 @@ Provide constructive feedback on their career decisions and areas for improvemen
   };
 
   const attributeIcons = {
-    skills: Target,
+    skills: TrendingUp,
     relationships: Users,
-    reputation: TrendingUp,
+    reputation: Award,
     workLifeBalance: Briefcase,
   };
 
