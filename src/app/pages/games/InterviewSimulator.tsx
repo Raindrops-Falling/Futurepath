@@ -6,6 +6,7 @@ import { Textarea } from '../../components/ui/textarea';
 import { GeometricShapes } from '../../components/GeometricShapes';
 import { Footer } from '../../components/Footer';
 import { supabase } from '../../lib/supabase';
+import { fetchWithAuthOrAnon } from '../../lib/anon';
 import { MessageSquare, CheckCircle2 } from 'lucide-react';
 
 const INTERVIEW_TYPES = [
@@ -63,22 +64,14 @@ export function InterviewSimulator() {
   const trackGameStart = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (session?.access_token) {
-        const { projectId } = await import('../../../utils/supabase/info');
-        await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/start-game`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({
-              game_id: 'interview-simulator'
-            }),
-          }
-        );
-      }
+      const { projectId } = await import('../../../utils/supabase/info');
+      await fetchWithAuthOrAnon(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/start-game`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ game_id: 'interview-simulator' }),
+        }
+      );
     } catch (error) {
       console.error('Error tracking game start:', error);
     }
@@ -105,8 +98,17 @@ export function InterviewSimulator() {
     const newAnswers = [...answers, currentAnswer];
     setAnswers(newAnswers);
 
-    // Get AI feedback
+    // Track AI call (auth or anon) and get AI feedback
     try {
+      try {
+        const { projectId } = await import('../../../utils/supabase/info');
+        fetchWithAuthOrAnon(
+          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-ai-calls`,
+          { method: 'POST' }
+        ).catch((e) => console.error('Error incrementing ai calls:', e));
+      } catch (e) {
+        console.error('Error importing projectId for ai calls:', e);
+      }
       const questions = INTERVIEW_QUESTIONS[selectedType!];
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
@@ -125,7 +127,7 @@ export function InterviewSimulator() {
           "messages": [
             {
               "role": "system",
-              "content": "You are an experienced career coach and interviewer. Provide constructive feedback on the candidate's answer. Be specific about strengths and areas for improvement. Keep to 3-4 sentences."
+              "content": "You are a careful, evidence-based interview coach. Base feedback only on the candidate's answer provided. Do not assume unstated facts or invent details. If the answer is ambiguous or insufficient, say so and ask for clarification. Provide concise, actionable feedback (3-4 sentences). Do NOT use Markdown or other markup. Reply in plain text with natural newlines."
             },
             {
               "role": "user",
@@ -144,24 +146,18 @@ export function InterviewSimulator() {
         const newInteractions = chatbotInteractions + 1;
         setChatbotInteractions(newInteractions);
         
-        if (isAuthenticated) {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.access_token) {
-            const { projectId } = await import('../../../utils/supabase/info');
-            await fetch(
-              `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
-              {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${session.access_token}`,
-                },
-                body: JSON.stringify({
-                  xp_amount: 3 // 3 XP per chatbot interaction
-                }),
-              }
-            );
-          }
+        // Award XP for chatbot interactions (auth or anon)
+        try {
+          const { projectId } = await import('../../../utils/supabase/info');
+          await fetchWithAuthOrAnon(
+            `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
+            {
+              method: 'POST',
+              body: JSON.stringify({ xp_amount: 3 }),
+            }
+          );
+        } catch (err) {
+          console.error('Error awarding XP:', err);
         }
       } else {
         setFeedback([...feedback, 'Unable to generate feedback at this time.']);
@@ -188,6 +184,15 @@ export function InterviewSimulator() {
 
     // Generate overall feedback
     try {
+      try {
+        const { projectId } = await import('../../../utils/supabase/info');
+        fetchWithAuthOrAnon(
+          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-ai-calls`,
+          { method: 'POST' }
+        ).catch((e) => console.error('Error incrementing ai calls:', e));
+      } catch (e) {
+        console.error('Error importing projectId for ai calls:', e);
+      }
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -197,21 +202,19 @@ export function InterviewSimulator() {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          "model": "meta-llama/llama-3.2-8b-instruct",
-          "messages": [
+          model: "meta-llama/llama-3.2-8b-instruct",
+          messages: [
             {
-              "role": "system",
-              "content": "You are an experienced career coach. Provide overall feedback on interview performance with specific actionable advice. Keep to 4-5 sentences."
+              role: "system",
+              content: "You are an experienced career coach. Provide overall feedback on interview performance with specific actionable advice. Keep to 4-5 sentences."
             },
             {
-              "role": "user",
-              "content": `A candidate completed a ${selectedType} interview with ${finalAnswers.length} questions. Provide overall performance feedback and tips for improvement.`
-            }
-          ],
-          "provider": {
-            "name": "deepinfra"
-          }
-        })
+              role: "user",
+              content: `A candidate completed a ${selectedType} interview with ${finalAnswers.length} questions. Provide overall performance feedback and tips for improvement.`
+            {
+              "role": "system",
+              "content": "You are a careful, evidence-based career coach. Provide overall feedback only based on the answers supplied. Do not invent context or guarantee outcomes. If input is insufficient, state that and ask for clarification. Provide concise, actionable overall feedback (4-5 sentences). Do NOT use Markdown or other markup. Reply in plain text with natural newlines."
+            },
       });
 
       if (response.ok) {
@@ -227,41 +230,20 @@ export function InterviewSimulator() {
       setLoadingFeedback(false);
     }
 
-    // Award game completion XP
-    if (isAuthenticated) {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          const { projectId } = await import('../../../utils/supabase/info');
-          
-          await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`,
-              },
-              body: JSON.stringify({
-                xp_amount: 15 // 15 XP for game completion
-              }),
-            }
-          );
+    // Award game completion XP (works for auth or anon)
+    try {
+      const { projectId } = await import('../../../utils/supabase/info');
+      await fetchWithAuthOrAnon(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
+        { method: 'POST', body: JSON.stringify({ xp_amount: 15 }) }
+      );
 
-          await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-game`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`,
-              },
-            }
-          );
-        }
-      } catch (error) {
-        console.error('Error tracking game completion:', error);
-      }
+      await fetchWithAuthOrAnon(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-game`,
+        { method: 'POST' }
+      );
+    } catch (error) {
+      console.error('Error tracking game completion:', error);
     }
   };
 

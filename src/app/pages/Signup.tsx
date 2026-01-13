@@ -46,7 +46,8 @@ export function Signup() {
     try {
       const { projectId } = await import('../../utils/supabase/info');
       
-      // Call backend signup endpoint
+      // Attach anon_id if present so server can migrate anon session data on signup
+      const anonId = localStorage.getItem('anon_id');
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/signup`,
         {
@@ -57,7 +58,8 @@ export function Signup() {
           body: JSON.stringify({
             email,
             password,
-            full_name: fullName
+            full_name: fullName,
+            anon_id: anonId || undefined,
           }),
         }
       );

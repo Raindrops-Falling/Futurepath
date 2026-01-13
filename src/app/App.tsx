@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { supabase } from './lib/supabase';
+import { getOrCreateAnonId } from './lib/anon';
 import { Navigation } from './components/Navigation';
 import { Home } from './pages/Home';
 import { Articles } from './pages/Articles';
@@ -32,6 +33,10 @@ export default function App() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       setIsAuthenticated(!!session);
+      // Ensure anon id exists for anonymous visitors so progress persists
+      if (!session?.user) {
+        try { await getOrCreateAnonId(); } catch (e) { /* ignore */ }
+      }
     } catch (error) {
       console.error('Auth check error:', error);
     } finally {

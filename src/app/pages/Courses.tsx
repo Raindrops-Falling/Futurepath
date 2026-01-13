@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { LessonView } from '../components/LessonView';
 import { BookOpen, CheckCircle2, Star, Target } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { fetchWithAuthOrAnon } from '../lib/anon';
 
 export function Courses() {
   const [selectedLesson, setSelectedLesson] = useState<string | null>(null);
@@ -20,25 +21,16 @@ export function Courses() {
 
   const loadUserProgress = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.access_token) {
-        const { projectId } = await import('../../utils/supabase/info');
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/profile`,
-          {
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-          }
-        );
-        
-        if (response.ok) {
-          const data = await response.json();
-          setUserProgress({
-            completedMC: data.profile.completedMC || [],
-            completedOE: data.profile.completedOE || []
-          });
-        }
+      const { projectId } = await import('../../utils/supabase/info');
+      const response = await fetchWithAuthOrAnon(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/profile`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setUserProgress({
+          completedMC: data.profile.completedMC || [],
+          completedOE: data.profile.completedOE || []
+        });
       }
     } catch (error) {
       console.error('Error loading progress:', error);
@@ -98,23 +90,11 @@ export function Courses() {
       
       // Track course access
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          const { projectId } = await import('../../utils/supabase/info');
-          await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/update-recent-courses`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`,
-              },
-              body: JSON.stringify({
-                course_id: courseId.toString()
-              }),
-            }
-          );
-        }
+        const { projectId } = await import('../../utils/supabase/info');
+        await fetchWithAuthOrAnon(
+          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/update-recent-courses`,
+          { method: 'POST', body: JSON.stringify({ course_id: courseId.toString() }) }
+        );
       } catch (error) {
         console.error('Error tracking course access:', error);
       }

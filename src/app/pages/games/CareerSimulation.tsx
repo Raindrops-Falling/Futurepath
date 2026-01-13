@@ -7,6 +7,8 @@ import { Footer } from '../../components/Footer';
 import { Briefcase, Award, Users, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { Progress } from '../../components/ui/progress';
+import { fetchWithAuthOrAnon } from '../../lib/anon';
 
 interface Attributes {
   skills: number;
@@ -354,23 +356,11 @@ export function CareerSimulation() {
 
   const trackGameStart = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.access_token) {
-        const { projectId } = await import('../../../utils/supabase/info');
-        await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/start-game`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({
-              game_id: 'career-simulation'
-            }),
-          }
-        );
-      }
+      const { projectId } = await import('../../../utils/supabase/info');
+      await fetchWithAuthOrAnon(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/start-game`,
+        { method: 'POST', body: JSON.stringify({ game_id: 'career-simulation' }) }
+      );
     } catch (error) {
       console.error('Error tracking game start:', error);
     }
@@ -390,51 +380,38 @@ export function CareerSimulation() {
       setGameComplete(true);
       await generateFeedback(newAttributes);
       
-      // Award XP for game completion
-      if (isAuthenticated) {
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.access_token) {
-            const { projectId } = await import('../../../utils/supabase/info');
-            
-            // Add 15 XP for game completion
-            await fetch(
-              `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
-              {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${session.access_token}`,
-                },
-                body: JSON.stringify({
-                  xp_amount: 15
-                }),
-              }
-            );
+    // Award XP for game completion (auth or anon)
+    try {
+      const { projectId } = await import('../../../utils/supabase/info');
+      await fetchWithAuthOrAnon(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
+        { method: 'POST', body: JSON.stringify({ xp_amount: 15 }) }
+      );
 
-            // Increment games played
-            await fetch(
-              `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-game`,
-              {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${session.access_token}`,
-                },
-              }
-            );
-          }
-        } catch (error) {
-          console.error('Error tracking game completion:', error);
-        }
-      }
+      await fetchWithAuthOrAnon(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-game`,
+        { method: 'POST' }
+      );
+    } catch (error) {
+      console.error('Error tracking game completion:', error);
+    }
     }
   };
 
   const generateFeedback = async (finalAttributes: Attributes) => {
     setLoadingFeedback(true);
-    
     try {
+      // Track AI call (anon or authenticated)
+      try {
+        const { projectId } = await import('../../../utils/supabase/info');
+        fetchWithAuthOrAnon(
+          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-ai-calls`,
+          { method: 'POST' }
+        ).catch((e) => console.error('Error incrementing ai calls:', e));
+      } catch (e) {
+        console.error('Error importing projectId for ai calls:', e);
+      }
+
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -452,7 +429,7 @@ export function CareerSimulation() {
           "messages": [
             {
               "role": "system",
-              "content": "You are a career development coach. Provide encouraging yet honest feedback on career simulation results. Keep feedback to 3-4 sentences with specific actionable advice."
+              "content": "You are a careful, evidence-based career development coach. Review only the attributes provided and ground all statements in those values. Do NOT assume unstated context, invent details, or guarantee outcomes. If the input is ambiguous or insufficient, state that explicitly and ask for clarification. Do NOT produce sample prompts or examples; provide concise feedback (3-4 sentences) that references the provided attribute scores. Avoid sweeping claims, do NOT use Markdown or other markup, and reply in plain text with natural newlines."
             },
             {
               "role": "user",

@@ -8,6 +8,7 @@ import { Footer } from '../../components/Footer';
 import { CheckCircle, XCircle, Target } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { fetchWithAuthOrAnon } from '../../lib/anon';
 
 interface Skill {
   name: string;
@@ -28,23 +29,11 @@ export function SkillGapAnalyzer() {
 
   const trackGameStart = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.access_token) {
-        const { projectId } = await import('../../../utils/supabase/info');
-        await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/start-game`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({
-              game_id: 'skill-gap-analyzer'
-            }),
-          }
-        );
-      }
+      const { projectId } = await import('../../../utils/supabase/info');
+      await fetchWithAuthOrAnon(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/start-game`,
+        { method: 'POST', body: JSON.stringify({ game_id: 'skill-gap-analyzer' }) }
+      );
     } catch (error) {
       console.error('Error tracking game start:', error);
     }

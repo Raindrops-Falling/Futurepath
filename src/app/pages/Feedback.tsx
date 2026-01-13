@@ -6,6 +6,7 @@ import { Textarea } from '../components/ui/textarea';
 import { GeometricShapes } from '../components/GeometricShapes';
 import { Footer } from '../components/Footer';
 import { supabase } from '../lib/supabase';
+import { fetchWithAuthOrAnon } from '../lib/anon';
 import { CheckCircle2 } from 'lucide-react';
 
 export function Feedback() {
@@ -32,24 +33,10 @@ export function Feedback() {
     setLoading(true);
     
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session?.access_token) {
-        alert('Please log in to submit feedback.');
-        setLoading(false);
-        return;
-      }
-
       const { projectId } = await import('../../utils/supabase/info');
-      
-      // Get current profile
-      const profileResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/profile`,
-        {
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-        }
+      // Fetch profile (auth or anon)
+      const profileResponse = await fetchWithAuthOrAnon(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/profile`
       );
 
       if (!profileResponse.ok) {
@@ -57,7 +44,7 @@ export function Feedback() {
       }
 
       const profileData = await profileResponse.json();
-      const currentProfile = profileData.profile;
+      const currentProfile = profileData.profile || {};
 
       // Add feedback to array
       const feedbackList = currentProfile.feedback || [];
@@ -66,19 +53,10 @@ export function Feedback() {
         date: new Date().toISOString(),
       });
 
-      // Update profile with feedback
-      const updateResponse = await fetch(
+      // Update profile with feedback (works for auth or anon)
+      const updateResponse = await fetchWithAuthOrAnon(
         `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/profile`,
-        {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            feedback: feedbackList,
-          }),
-        }
+        { method: 'PUT', body: JSON.stringify({ feedback: feedbackList }) }
       );
 
       if (!updateResponse.ok) {

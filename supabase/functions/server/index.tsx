@@ -134,34 +134,14 @@ via the /update-achievements endpoint. Here's the logic:
    - course_completed: Set to true when achievement_type='course_completed' is sent
    - Triggered from frontend when a course reaches 100%
 
---------------------------------------------------------------------------------
 ENDPOINT REQUIREMENTS
---------------------------------------------------------------------------------
 
 Implemented Endpoints:
-- POST /make-server-ff90fa65/signup
-- GET /make-server-ff90fa65/profile
-- PUT /make-server-ff90fa65/profile
-- POST /make-server-ff90fa65/add-xp
-- POST /make-server-ff90fa65/update-lesson-progress (manual progress update)
-- POST /make-server-ff90fa65/update-course-progress (auto-calculates based on lessons)
-- POST /make-server-ff90fa65/increment-game
-- POST /make-server-ff90fa65/start-game
-- POST /make-server-ff90fa65/increment-question
-- POST /make-server-ff90fa65/update-achievements
-- POST /make-server-ff90fa65/update-recent-courses
-- POST /make-server-ff90fa65/increment-articles
-- POST /make-server-ff90fa65/update-clicker
-- GET /make-server-ff90fa65/anon-profile
 
 Important Notes:
-- XP is only awarded on FIRST completion of questions, NOT on retries
-- Retry mode updates completedMC/completedOE values but does NOT award XP
-- Retries DO increment question counts (for profile stats)
-- Course progress auto-calculates based on completed lessons (both MC + OE)
-- Anonymous user data is for TRACKING ONLY and is NOT merged on signup
+// - XP is awarded on every question submission (including retries)
+// - Retry mode updates completedMC/completedOE values and XP is still awarded
 
---------------------------------------------------------------------------------
 INITIALIZATION (signup endpoint)
 --------------------------------------------------------------------------------
 
@@ -186,7 +166,7 @@ When creating a new user, initialize with:
   open_ended_questions_done: 0,
   multiple_choice_questions_done: 0,
   completedMC: {},
-  completedOE: {},
+  oe_detail: {},
   recent_courses: [],
   corporate_clicker: {
     money: 0,
@@ -237,9 +217,10 @@ app.use(
   "/*",
   cors({
     origin: "*",
-    allowHeaders: ["Content-Type", "Authorization"],
+    allowHeaders: ["Content-Type", "Authorization", "x-anon-id"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    exposeHeaders: ["Content-Length"],
+    // Expose x-anon-id so frontend can read and persist anonymous session id
+    exposeHeaders: ["Content-Length", "x-anon-id"],
     maxAge: 600,
   }),
 );
@@ -251,7 +232,6 @@ function checkAchievements(userData: any, xpGained: number = 0): void {
       first_lesson: false,
       first_game: false,
       course_completed: false,
-      five_games: false,
       three_articles: false,
       last_activity_date: null,
       total_lessons_completed: 0,
@@ -265,15 +245,13 @@ function checkAchievements(userData: any, xpGained: number = 0): void {
   }
 
   // Check for first lesson completion - lesson must appear in BOTH completedMC and completedOE
-  if (!userData.achievements.first_lesson && userData.completedMC && userData.completedOE) {
-    // Check if both are objects (new format)
-    if (typeof userData.completedMC === 'object' && typeof userData.completedOE === 'object') {
-      const completedMCKeys = Object.keys(userData.completedMC);
-      const completedOEKeys = Object.keys(userData.completedOE);
-      const completedLessons = completedMCKeys.filter(lessonId => completedOEKeys.includes(lessonId));
-      if (completedLessons.length > 0) {
-        userData.achievements.first_lesson = true;
-      }
+  if (!userData.achievements.first_lesson && userData.completedMC) {
+    // Derive completed OE keys from oe_detail
+    const completedMCKeys = typeof userData.completedMC === 'object' ? Object.keys(userData.completedMC) : [];
+    const completedOEKeys = typeof userData.oe_detail === 'object' ? Object.keys(userData.oe_detail) : [];
+    const completedLessons = completedMCKeys.filter(lessonId => completedOEKeys.includes(lessonId));
+    if (completedLessons.length > 0) {
+      userData.achievements.first_lesson = true;
     }
   }
 
@@ -303,9 +281,183 @@ function checkAchievements(userData: any, xpGained: number = 0): void {
   userData.achievements.last_activity_date = today;
 }
 
+// Resolve actor: authenticated user or anonymous session via header `x-anon-id`.
+async function resolveActor(c: any) {
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+  );
+
+  const accessToken = c.req.header('Authorization')?.split(' ')[1];
+  if (accessToken) {
+    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
+    if (error || !user) return { type: 'unauthenticated' };
+    const userData = await kv.get(`user:${user.id}`);
+    return { type: 'user', id: user.id, user, data: userData };
+  }
+
+  const anonId = c.req.header('x-anon-id');
+  if (anonId) {
+    const anonDataRaw = await kv.getAnon(`anon:${anonId}`);
+    const anonData = ensureAnonData(anonDataRaw || {});
+    return { type: 'anon', id: anonId, data: anonData };
+  }
+
+  // No anon id provided - create an anonymous session automatically
+  try {
+    const newAnonId = crypto.randomUUID();
+    const anonKey = `anon:${newAnonId}`;
+    const anonTemplate = JSON.parse(JSON.stringify(ANON_TEMPLATE));
+    // persist a full, normalized anon profile
+    await kv.setAnon(anonKey, anonTemplate);
+    // Inform the client of the new anon id so it can persist it for future requests
+    c.header('x-anon-id', newAnonId);
+    return { type: 'anon', id: newAnonId, data: anonTemplate, new: true };
+  } catch (err) {
+    console.error('Failed to create anon session:', err);
+    return { type: 'none' };
+  }
+}
+
+// Canonical anon template used to initialize and normalize anonymous profiles
+const ANON_TEMPLATE = {
+  user_id: null,
+  full_name: null,
+  xp: 0,
+  ai_calls: 0,
+  rank: 'Beginner',
+  feedback: [],
+  games_played: 0,
+  games_list: [],
+  articles_read: 0,
+  articles_list: [],
+  lesson_progress: { course_1: 0, course_2: 0, course_3: 0, course_4: 0, course_5: 0 },
+  open_ended_questions_done: 0,
+  multiple_choice_questions_done: 0,
+  completedMC: {},
+  completedOE: {},
+  recent_courses: [],
+  corporate_clicker: { money:0, money_per_second:0, last_played: new Date().toISOString(), buildings: { developer:0, manager:0, shareholder:0, ceo:0, investor:0, board_member:0, venture_capitalist:0, hedge_fund:0, conglomerate:0, monopoly:0 } },
+    achievements: {
+    first_lesson: false,
+    first_game: false,
+    course_completed: false,
+    three_articles: false,
+    last_activity_date: null,
+    total_lessons_completed: 0,
+    total_games_completed: 0,
+    xp_milestones: { '100': false, '500': false, '1000': false }
+  }
+};
+
+// Ensure an anon data object contains the full set of fields (deep-ish merge)
+function ensureAnonData(data: any) {
+  const base = JSON.parse(JSON.stringify(ANON_TEMPLATE));
+  if (!data) return base;
+  const merged: any = { ...base, ...data };
+  merged.lesson_progress = { ...base.lesson_progress, ...(data.lesson_progress || {}) };
+  merged.corporate_clicker = { ...base.corporate_clicker, ...(data.corporate_clicker || {}) };
+  merged.corporate_clicker.buildings = { ...base.corporate_clicker.buildings, ...(data.corporate_clicker?.buildings || {}) };
+  merged.achievements = { ...base.achievements, ...(data.achievements || {}) };
+  merged.completedMC = data.completedMC || {};
+  merged.oe_detail = data.oe_detail || data._oe_detail || {};
+  merged.feedback = data.feedback || [];
+  merged.recent_courses = data.recent_courses || [];
+  merged.articles_list = data.articles_list || [];
+  merged.games_list = data.games_list || [];
+  merged.xp = typeof data.xp === 'number' ? data.xp : base.xp;
+  merged.rank = data.rank || base.rank;
+  merged.ai_calls = typeof data.ai_calls === 'number' ? data.ai_calls : 0;
+  merged.open_ended_questions_done = data.open_ended_questions_done ?? 0;
+  merged.multiple_choice_questions_done = data.multiple_choice_questions_done ?? 0;
+  merged.games_played = data.games_played ?? 0;
+  merged.articles_read = data.articles_read ?? 0;
+  return merged;
+}
+
+// Ensure a user data object contains canonical fields (similar to anon normalization)
+function ensureUserData(data: any, userId: string) {
+  const base = {
+    xp: 0,
+    ai_calls: 0,
+    rank: 'Beginner',
+    user_id: userId,
+    feedback: [],
+    full_name: '',
+    games_played: 0,
+    games_list: [],
+    articles_read: 0,
+    articles_list: [],
+    lesson_progress: { course_1: 0, course_2: 0, course_3: 0, course_4: 0, course_5: 0 },
+    open_ended_questions_done: 0,
+    multiple_choice_questions_done: 0,
+    completedMC: {},
+    oe_detail: {},
+    recent_courses: [],
+    corporate_clicker: { money:0, money_per_second:0, last_played: new Date().toISOString(), buildings: { developer:0, manager:0, shareholder:0, ceo:0, investor:0, board_member:0, venture_capitalist:0, hedge_fund:0, conglomerate:0, monopoly:0 } },
+    achievements: {
+      first_lesson: false,
+      first_game: false,
+      course_completed: false,
+      three_articles: false,
+      last_activity_date: null,
+      total_lessons_completed: 0,
+      total_games_completed: 0,
+      xp_milestones: { '100': false, '500': false, '1000': false }
+    }
+  };
+  if (!data) return base;
+  const merged: any = { ...base, ...data };
+  merged.lesson_progress = { ...base.lesson_progress, ...(data.lesson_progress || {}) };
+  merged.corporate_clicker = { ...base.corporate_clicker, ...(data.corporate_clicker || {}) };
+  merged.corporate_clicker.buildings = { ...base.corporate_clicker.buildings, ...(data.corporate_clicker?.buildings || {}) };
+  merged.achievements = { ...base.achievements, ...(data.achievements || {}) };
+  merged.completedMC = data.completedMC || {};
+  merged.oe_detail = data.oe_detail || data._oe_detail || {};
+  merged.feedback = data.feedback || [];
+  merged.recent_courses = data.recent_courses || [];
+  merged.articles_list = data.articles_list || [];
+  merged.games_list = data.games_list || [];
+  merged.xp = typeof data.xp === 'number' ? data.xp : base.xp;
+  merged.rank = data.rank || base.rank;
+  merged.ai_calls = typeof data.ai_calls === 'number' ? data.ai_calls : 0;
+  merged.open_ended_questions_done = data.open_ended_questions_done ?? 0;
+  merged.multiple_choice_questions_done = data.multiple_choice_questions_done ?? 0;
+  merged.games_played = data.games_played ?? 0;
+  merged.articles_read = data.articles_read ?? 0;
+  return merged;
+}
+
 // Health check endpoint
 app.get("/make-server-ff90fa65/health", (c) => {
   return c.json({ status: "ok" });
+});
+
+// Create anonymous session and initialize anon KV entry
+app.post("/make-server-ff90fa65/anon-start", async (c) => {
+  try {
+    const anonId = crypto.randomUUID();
+    const anonKey = `anon:${anonId}`;
+    const anonTemplate = JSON.parse(JSON.stringify(ANON_TEMPLATE));
+    await kv.setAnon(anonKey, anonTemplate);
+    return c.json({ success: true, anon_id: anonId });
+  } catch (error) {
+    console.log('Anon start error:', error);
+    return c.json({ error: 'Failed to start anon session: ' + String(error) }, 500);
+  }
+});
+
+// End anonymous session and optionally wipe data
+app.post("/make-server-ff90fa65/anon-end", async (c) => {
+  try {
+    const { anon_id } = await c.req.json();
+    if (!anon_id) return c.json({ error: 'anon_id required' }, 400);
+    await kv.delAnon(`anon:${anon_id}`);
+    return c.json({ success: true });
+  } catch (error) {
+    console.log('Anon end error:', error);
+    return c.json({ error: 'Failed to end anon session: ' + String(error) }, 500);
+  }
 });
 
 // Sign up endpoint
@@ -316,8 +468,8 @@ app.post("/make-server-ff90fa65/signup", async (c) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
     
-    const { email, password, full_name } = await c.req.json();
-    
+    const body = await c.req.json();
+    const { email, password, full_name, anon_id, anonId } = body;
     console.log('[SIGNUP] Creating user:', email);
     
     // Create user with Supabase auth
@@ -344,6 +496,7 @@ app.post("/make-server-ff90fa65/signup", async (c) => {
 
     const userData = {
       xp: 0,
+      ai_calls: 0,
       rank: "Beginner",
       user_id: userId,
       feedback: [],
@@ -398,8 +551,50 @@ app.post("/make-server-ff90fa65/signup", async (c) => {
       }
     };
 
-    await kv.set(`user:${userId}`, userData);
-    console.log('[SIGNUP] User profile created in KV store');
+    // If an anonymous session id is provided, merge its data into the new user
+    const suppliedAnonId = anon_id || anonId;
+    if (suppliedAnonId) {
+      try {
+        const anonDataRaw = await kv.getAnon(`anon:${suppliedAnonId}`);
+        const anonData = ensureAnonData(anonDataRaw || {});
+        if (anonData) {
+          // Start with the new user's defaults, then apply anon values so
+          // anon progress (including nested corporate_clicker/buildings) is preserved.
+          const merged: any = { ...userData, ...anonData };
+
+          // Deep-merge corporate_clicker and its buildings to avoid clobbering nested anon progress
+          merged.corporate_clicker = {
+            ...(userData.corporate_clicker || {}),
+            ...(anonData.corporate_clicker || {}),
+          };
+          merged.corporate_clicker.buildings = {
+            ...(userData.corporate_clicker?.buildings || {}),
+            ...(anonData.corporate_clicker?.buildings || {}),
+          };
+
+          // Preserve explicitly-supplied signup full_name if provided
+          if (full_name) merged.full_name = full_name;
+
+          // Ensure canonical fields are correct for the new user
+          merged.user_id = userId;
+          merged.xp = merged.xp ?? 0;
+          merged.rank = merged.rank ?? 'Beginner';
+
+          await kv.set(`user:${userId}`, merged);
+          // Delete anonymous data after migration
+          await kv.delAnon(`anon:${suppliedAnonId}`);
+          console.log('[SIGNUP] Migrated anon data to new user:', suppliedAnonId, '->', userId);
+        } else {
+          await kv.set(`user:${userId}`, userData);
+        }
+      } catch (e) {
+        console.log('[SIGNUP] Error merging anon data:', e);
+        await kv.set(`user:${userId}`, userData);
+      }
+    } else {
+      await kv.set(`user:${userId}`, userData);
+      console.log('[SIGNUP] User profile created in KV store');
+    }
 
     return c.json({ success: true, user: authData.user });
   } catch (error) {
@@ -416,23 +611,27 @@ app.get("/make-server-ff90fa65/profile", async (c) => {
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
     );
 
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) {
-      return c.json({ error: 'No authorization token' }, 401);
+    const resolved = await resolveActor(c);
+    if (resolved.type === 'unauthenticated' || resolved.type === 'none') {
+      return c.json({ error: 'No authorization token or anon session' }, 401);
     }
 
-    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-    if (error || !user) {
-      console.log('Profile fetch - authorization error:', error);
-      return c.json({ error: 'Unauthorized' }, 401);
+    if (resolved.type === 'user') {
+      if (!resolved.data) return c.json({ error: 'User data not found' }, 404);
+      return c.json({ profile: resolved.data });
     }
 
-    const userData = await kv.get(`user:${user.id}`);
-    if (!userData) {
-      return c.json({ error: 'User data not found' }, 404);
+    // anon
+    if (resolved.type === 'anon') {
+      // If anon profile doesn't exist, initialize and persist it
+      if (!resolved.data) {
+        const anonTemplate = JSON.parse(JSON.stringify(ANON_TEMPLATE));
+        await kv.setAnon(`anon:${resolved.id}`, anonTemplate);
+        return c.json({ profile: anonTemplate, anon_id: resolved.id });
+      }
+      // return a normalized, full anon profile
+      return c.json({ profile: ensureAnonData(resolved.data), anon_id: resolved.id });
     }
-
-    return c.json({ profile: userData });
   } catch (error) {
     console.log('Profile fetch error:', error);
     return c.json({ error: 'Failed to fetch profile: ' + String(error) }, 500);
@@ -447,27 +646,25 @@ app.put("/make-server-ff90fa65/profile", async (c) => {
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
     );
 
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) {
-      return c.json({ error: 'No authorization token' }, 401);
-    }
-
-    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-    if (error || !user) {
-      console.log('Profile update - authorization error:', error);
-      return c.json({ error: 'Unauthorized' }, 401);
+    const resolved = await resolveActor(c);
+    if (resolved.type === 'unauthenticated' || resolved.type === 'none') {
+      return c.json({ error: 'No authorization token or anon session' }, 401);
     }
 
     const updates = await c.req.json();
-    const currentData = await kv.get(`user:${user.id}`);
-    
-    if (!currentData) {
-      return c.json({ error: 'User data not found' }, 404);
+
+    if (resolved.type === 'user') {
+      const currentData = await kv.get(`user:${resolved.id}`);
+      if (!currentData) return c.json({ error: 'User data not found' }, 404);
+      const updatedData = { ...currentData, ...updates };
+      await kv.set(`user:${resolved.id}`, updatedData);
+      return c.json({ success: true, profile: updatedData });
     }
 
+    // anon update
+    const currentData = ensureAnonData(resolved.data || {});
     const updatedData = { ...currentData, ...updates };
-    await kv.set(`user:${user.id}`, updatedData);
-
+    await kv.setAnon(`anon:${resolved.id}`, updatedData);
     return c.json({ success: true, profile: updatedData });
   } catch (error) {
     console.log('Profile update error:', error);
@@ -484,43 +681,37 @@ app.post("/make-server-ff90fa65/add-xp", async (c) => {
     );
 
     const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) {
-      return c.json({ error: 'No authorization token' }, 401);
-    }
+      const resolved = await resolveActor(c);
+      if (resolved.type === 'unauthenticated' || resolved.type === 'none') {
+        return c.json({ error: 'No authorization token or anon session' }, 401);
+      }
 
-    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-    if (error || !user) {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
+      const { xp_amount } = await c.req.json();
 
-    const { xp_amount } = await c.req.json();
-    const currentData = await kv.get(`user:${user.id}`);
-    
-    if (!currentData) {
-      return c.json({ error: 'User data not found' }, 404);
-    }
+      if (resolved.type === 'user') {
+        const currentData = await kv.get(`user:${resolved.id}`);
+        if (!currentData) return c.json({ error: 'User data not found' }, 404);
+        currentData.xp += xp_amount;
+        // Update rank
+        if (currentData.xp >= 1000) currentData.rank = "Expert";
+        else if (currentData.xp >= 500) currentData.rank = "Advanced";
+        else if (currentData.xp >= 200) currentData.rank = "Intermediate";
+        else currentData.rank = "Beginner";
+        checkAchievements(currentData, xp_amount);
+        await kv.set(`user:${resolved.id}`, currentData);
+        return c.json({ success: true, xp: currentData.xp, rank: currentData.rank });
+      }
 
-    currentData.xp += xp_amount;
-
-    // Update rank based on XP
-    if (currentData.xp >= 1000) {
-      currentData.rank = "Expert";
-    } else if (currentData.xp >= 500) {
-      currentData.rank = "Advanced";
-    } else if (currentData.xp >= 200) {
-      currentData.rank = "Intermediate";
-    } else {
-      currentData.rank = "Beginner";
-    }
-
-    // Check achievements and update streak
-    checkAchievements(currentData, xp_amount);
-
-    await kv.set(`user:${user.id}`, currentData);
-
-    console.log(`[ADD XP] User ${user.id} gained ${xp_amount} XP, total: ${currentData.xp}, rank: ${currentData.rank}`);
-
-    return c.json({ success: true, xp: currentData.xp, rank: currentData.rank });
+      // anon
+      const currentData = ensureAnonData(resolved.data || {});
+      currentData.xp = (currentData.xp || 0) + xp_amount;
+      if (currentData.xp >= 1000) currentData.rank = "Expert";
+      else if (currentData.xp >= 500) currentData.rank = "Advanced";
+      else if (currentData.xp >= 200) currentData.rank = "Intermediate";
+      else currentData.rank = "Beginner";
+      checkAchievements(currentData, xp_amount);
+      await kv.setAnon(`anon:${resolved.id}`, currentData);
+      return c.json({ success: true, xp: currentData.xp, rank: currentData.rank });
   } catch (error) {
     console.log('Add XP error:', error);
     return c.json({ error: 'Failed to add XP: ' + String(error) }, 500);
@@ -535,28 +726,25 @@ app.post("/make-server-ff90fa65/update-lesson-progress", async (c) => {
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
     );
 
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) {
-      return c.json({ error: 'No authorization token' }, 401);
-    }
-
-    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-    if (error || !user) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    const resolved = await resolveActor(c);
+    if (resolved.type === 'unauthenticated' || resolved.type === 'none') {
+      return c.json({ error: 'No authorization token or anon session' }, 401);
     }
 
     const { course_id, progress } = await c.req.json();
-    const currentData = await kv.get(`user:${user.id}`);
-    
-    if (!currentData) {
-      return c.json({ error: 'User data not found' }, 404);
+
+    if (resolved.type === 'user') {
+      const currentData = await kv.get(`user:${resolved.id}`);
+      if (!currentData) return c.json({ error: 'User data not found' }, 404);
+      currentData.lesson_progress[course_id] = progress;
+      await kv.set(`user:${resolved.id}`, currentData);
+      return c.json({ success: true, lesson_progress: currentData.lesson_progress });
     }
 
+    // anon
+    const currentData = ensureAnonData(resolved.data || {});
     currentData.lesson_progress[course_id] = progress;
-    await kv.set(`user:${user.id}`, currentData);
-
-    console.log(`[LESSON PROGRESS] User ${user.id} - ${course_id}: ${progress}%`);
-
+    await kv.setAnon(`anon:${resolved.id}`, currentData);
     return c.json({ success: true, lesson_progress: currentData.lesson_progress });
   } catch (error) {
     console.log('Update lesson progress error:', error);
@@ -572,43 +760,32 @@ app.post("/make-server-ff90fa65/update-course-progress", async (c) => {
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
     );
 
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) {
-      return c.json({ error: 'No authorization token' }, 401);
-    }
-
-    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-    if (error || !user) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    const resolved = await resolveActor(c);
+    if (resolved.type === 'unauthenticated' || resolved.type === 'none') {
+      return c.json({ error: 'No authorization token or anon session' }, 401);
     }
 
     const { course_id, percentage } = await c.req.json();
-    const currentData = await kv.get(`user:${user.id}`);
-    
-    if (!currentData) {
-      return c.json({ error: 'User data not found' }, 404);
+
+    if (resolved.type === 'user') {
+      const currentData = await kv.get(`user:${resolved.id}`);
+      if (!currentData) return c.json({ error: 'User data not found' }, 404);
+      if (!currentData.lesson_progress) currentData.lesson_progress = { course_1:0, course_2:0, course_3:0, course_4:0, course_5:0 };
+      const courseKey = `course_${course_id}`;
+      if (currentData.lesson_progress[courseKey] !== undefined) {
+        currentData.lesson_progress[courseKey] = percentage;
+        await kv.set(`user:${resolved.id}`, currentData);
+      }
+      return c.json({ success: true, progress: percentage, lesson_progress: currentData.lesson_progress });
     }
 
-    // Ensure lesson_progress object exists
-    if (!currentData.lesson_progress) {
-      currentData.lesson_progress = {
-        course_1: 0,
-        course_2: 0,
-        course_3: 0,
-        course_4: 0,
-        course_5: 0,
-      };
-    }
-
-    // Directly store the percentage provided by the frontend
+    // anon
+    const currentData = ensureAnonData(resolved.data || {});
     const courseKey = `course_${course_id}`;
     if (currentData.lesson_progress[courseKey] !== undefined) {
       currentData.lesson_progress[courseKey] = percentage;
-      await kv.set(`user:${user.id}`, currentData);
-      
-      console.log(`[COURSE PROGRESS] User ${user.id} - Course ${course_id}: ${percentage}%`);
+      await kv.setAnon(`anon:${resolved.id}`, currentData);
     }
-
     return c.json({ success: true, progress: percentage, lesson_progress: currentData.lesson_progress });
   } catch (error) {
     console.log('Update course progress error:', error);
@@ -624,41 +801,126 @@ app.post("/make-server-ff90fa65/increment-game", async (c) => {
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
     );
 
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) {
-      return c.json({ error: 'No authorization token' }, 401);
+    const resolved = await resolveActor(c);
+    if (resolved.type === 'unauthenticated' || resolved.type === 'none') {
+      return c.json({ error: 'No authorization token or anon session' }, 401);
     }
 
-    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-    if (error || !user) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    if (resolved.type === 'user') {
+      const currentData = await kv.get(`user:${resolved.id}`);
+      if (!currentData) return c.json({ error: 'User data not found' }, 404);
+      currentData.games_played = (currentData.games_played || 0) + 1;
+      currentData.achievements = currentData.achievements || { total_games_completed: 0 };
+      currentData.achievements.total_games_completed = (currentData.achievements.total_games_completed || 0) + 1;
+      if (currentData.achievements.total_games_completed === 1) currentData.achievements.first_game = true;
+      await kv.set(`user:${resolved.id}`, currentData);
+      return c.json({ success: true, games_played: currentData.games_played });
     }
 
-    const currentData = await kv.get(`user:${user.id}`);
-    
-    if (!currentData) {
-      return c.json({ error: 'User data not found' }, 404);
-    }
-
-    currentData.games_played += 1;
-    currentData.achievements.total_games_completed += 1;
-
-    if (currentData.achievements.total_games_completed === 1) {
-      currentData.achievements.first_game = true;
-    }
-
-    if (currentData.achievements.total_games_completed >= 5) {
-      currentData.achievements.five_games = true;
-    }
-
-    await kv.set(`user:${user.id}`, currentData);
-
-    console.log(`[GAME PLAYED] User ${user.id} - Total games: ${currentData.games_played}`);
-
+    // anon
+    const currentData = ensureAnonData(resolved.data || {});
+    currentData.games_played = (currentData.games_played || 0) + 1;
+    currentData.achievements = currentData.achievements || { total_games_completed: 0 };
+    currentData.achievements.total_games_completed = (currentData.achievements.total_games_completed || 0) + 1;
+    if (currentData.achievements.total_games_completed === 1) currentData.achievements.first_game = true;
+    await kv.setAnon(`anon:${resolved.id}`, currentData);
     return c.json({ success: true, games_played: currentData.games_played });
   } catch (error) {
     console.log('Increment game error:', error);
     return c.json({ error: 'Failed to increment game: ' + String(error) }, 500);
+  }
+});
+
+// Increment AI calls endpoint
+app.post("/make-server-ff90fa65/increment-ai-calls", async (c) => {
+  try {
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+    );
+
+    const resolved = await resolveActor(c);
+    if (resolved.type === 'none') {
+      return c.json({ error: 'No authorization token or anon session' }, 401);
+    }
+
+    // If the request included an Authorization header but the token was invalid,
+    // resolveActor returns { type: 'unauthenticated' }. In that case, fall back
+    // to anonymous handling using x-anon-id if present or by creating a new anon.
+    if (resolved.type === 'unauthenticated') {
+      try {
+        const headerAnon = c.req.header('x-anon-id');
+        if (headerAnon) {
+          const currentData = ensureAnonData(await kv.getAnon(`anon:${headerAnon}`) || {});
+          currentData.ai_calls = (currentData.ai_calls || 0) + 1;
+          await kv.setAnon(`anon:${headerAnon}`, currentData);
+          return c.json({ success: true, ai_calls: currentData.ai_calls, anon_id: headerAnon });
+        }
+        // No anon id provided: create one and initialize
+        const newAnonId = crypto.randomUUID();
+        const anonTemplate = JSON.parse(JSON.stringify(ANON_TEMPLATE));
+        anonTemplate.ai_calls = 1;
+        await kv.setAnon(`anon:${newAnonId}`, anonTemplate);
+        c.header('x-anon-id', newAnonId);
+        return c.json({ success: true, ai_calls: anonTemplate.ai_calls, anon_id: newAnonId, created: true });
+      } catch (e) {
+        console.error('Error falling back to anon for increment-ai-calls:', e);
+        return c.json({ error: 'Failed to increment ai calls for unauthenticated request' }, 500);
+      }
+    }
+
+    if (resolved.type === 'user') {
+      let currentData = await kv.get(`user:${resolved.id}`);
+      if (!currentData) {
+        // Create a sensible default profile so we can track ai_calls
+        const fallback = {
+          xp: 0,
+          ai_calls: 1,
+          rank: "Beginner",
+          user_id: resolved.id,
+          feedback: [],
+          full_name: '',
+          games_played: 0,
+          games_list: [],
+          articles_read: 0,
+          articles_list: [],
+          lesson_progress: { course_1: 0, course_2: 0, course_3: 0, course_4: 0, course_5: 0 },
+          open_ended_questions_done: 0,
+          multiple_choice_questions_done: 0,
+          completedMC: {},
+          completedOE: {},
+          recent_courses: [],
+          corporate_clicker: { money: 0, money_per_second: 0, last_played: new Date().toISOString(), buildings: { developer:0, manager:0, shareholder:0, ceo:0, investor:0, board_member:0, venture_capitalist:0, hedge_fund:0, conglomerate:0, monopoly:0 } },
+          achievements: {
+            first_lesson: false,
+            first_game: false,
+            course_completed: false,
+            five_games: false,
+            three_articles: false,
+            last_activity_date: null,
+            total_lessons_completed: 0,
+            total_games_completed: 0,
+            xp_milestones: { '100': false, '500': false, '1000': false }
+          }
+        };
+        await kv.set(`user:${resolved.id}`, fallback);
+        return c.json({ success: true, ai_calls: fallback.ai_calls, created: true });
+      }
+      // Normalize user data to ensure `ai_calls` and other canonical fields exist
+      currentData = ensureUserData(currentData, resolved.id);
+      currentData.ai_calls = (currentData.ai_calls || 0) + 1;
+      await kv.set(`user:${resolved.id}`, currentData);
+      return c.json({ success: true, ai_calls: currentData.ai_calls });
+    }
+
+    // anon
+    const currentData = ensureAnonData(resolved.data || {});
+    currentData.ai_calls = (currentData.ai_calls || 0) + 1;
+    await kv.setAnon(`anon:${resolved.id}`, currentData);
+    return c.json({ success: true, ai_calls: currentData.ai_calls });
+  } catch (error) {
+    console.log('Increment AI calls error:', error);
+    return c.json({ error: 'Failed to increment ai calls: ' + String(error) }, 500);
   }
 });
 
@@ -670,43 +932,41 @@ app.post("/make-server-ff90fa65/start-game", async (c) => {
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
     );
 
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) {
-      return c.json({ error: 'No authorization token' }, 401);
-    }
-
-    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-    if (error || !user) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    const resolved = await resolveActor(c);
+    if (resolved.type === 'unauthenticated' || resolved.type === 'none') {
+      return c.json({ error: 'No authorization token or anon session' }, 401);
     }
 
     const { game_id } = await c.req.json();
-    const currentData = await kv.get(`user:${user.id}`);
-    
-    if (!currentData) {
-      return c.json({ error: 'User data not found' }, 404);
-    }
 
-    // Add game_id to games_list if not already present
-    if (!currentData.games_list.includes(game_id)) {
+    if (resolved.type === 'user') {
+      const currentData = await kv.get(`user:${resolved.id}`);
+      if (!currentData) return c.json({ error: 'User data not found' }, 404);
+      if (!currentData.games_list) currentData.games_list = [];
       currentData.games_list.push(game_id);
-      currentData.games_played += 1;
+      currentData.games_played = (currentData.games_played || 0) + 1;
+      if (!currentData.achievements) currentData.achievements = { total_games_completed: 0 };
+      if (!currentData.achievements.first_game) {
+        currentData.achievements.first_game = true;
+        await kv.set(`user:${resolved.id}`, currentData);
+      }
+      if (currentData.games_played >= 5) currentData.achievements.five_games = true;
+      await kv.set(`user:${resolved.id}`, currentData);
+      return c.json({ success: true, first_game: currentData.achievements.first_game });
     }
 
-    // Set first_game achievement if this is the first game started
+    // anon
+    const currentData = ensureAnonData(resolved.data || {});
+    if (!currentData.games_list) currentData.games_list = [];
+    currentData.games_list.push(game_id);
+    currentData.games_played = (currentData.games_played || 0) + 1;
+    currentData.achievements = currentData.achievements || { total_games_completed: 0 };
     if (!currentData.achievements.first_game) {
       currentData.achievements.first_game = true;
-      await kv.set(`user:${user.id}`, currentData);
-      console.log(`[GAME STARTED] User ${user.id} - First game achievement unlocked`);
+      await kv.setAnon(`anon:${resolved.id}`, currentData);
     }
-
-    // Check if games_played >= 5, set achievements.five_games = true
-    if (currentData.games_played >= 5) {
-      currentData.achievements.five_games = true;
-    }
-
-    await kv.set(`user:${user.id}`, currentData);
-
+    if (currentData.games_played >= 5) currentData.achievements.five_games = true;
+    await kv.setAnon(`anon:${resolved.id}`, currentData);
     return c.json({ success: true, first_game: currentData.achievements.first_game });
   } catch (error) {
     console.log('Start game error:', error);
@@ -722,56 +982,74 @@ app.post("/make-server-ff90fa65/increment-question", async (c) => {
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
     );
 
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) {
-      return c.json({ error: 'No authorization token' }, 401);
-    }
-
-    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-    if (error || !user) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    const resolved = await resolveActor(c);
+    if (resolved.type === 'unauthenticated' || resolved.type === 'none') {
+      return c.json({ error: 'No authorization token or anon session' }, 401);
     }
 
     const { question_type, lesson_id, percentage, is_retry, question_index } = await c.req.json(); // "multiple_choice" or "open_ended"
-    const currentData = await kv.get(`user:${user.id}`);
-    
-    if (!currentData) {
-      return c.json({ error: 'User data not found' }, 404);
+
+    if (resolved.type === 'user') {
+      const currentData = await kv.get(`user:${resolved.id}`);
+      if (!currentData) return c.json({ error: 'User data not found' }, 404);
+      if (!currentData.completedMC) currentData.completedMC = {};
+      if (!currentData.oe_detail) currentData.oe_detail = {};
+
+      if (question_type === 'multiple_choice') {
+        currentData.completedMC[lesson_id] = percentage;
+        currentData.multiple_choice_questions_done = (currentData.multiple_choice_questions_done || 0) + 5;
+      } else if (question_type === 'open_ended') {
+        if (!currentData.oe_detail) currentData.oe_detail = {};
+        if (!currentData.oe_detail[lesson_id]) currentData.oe_detail[lesson_id] = [0,0];
+        currentData.oe_detail[lesson_id][question_index] = percentage;
+        const scoresArray = currentData.oe_detail[lesson_id];
+        const agg = Math.round(((scoresArray[0]||0)+(scoresArray[1]||0))/2);
+        // Do not persist 'completedOE' as a separate field; oe_detail is authoritative.
+        currentData.open_ended_questions_done = (currentData.open_ended_questions_done || 0) + 1;
+      }
+
+      await kv.set(`user:${resolved.id}`, currentData);
+      return c.json({ 
+        success: true, 
+        multiple_choice_questions_done: currentData.multiple_choice_questions_done,
+        open_ended_questions_done: currentData.open_ended_questions_done,
+        completedMC: currentData.completedMC,
+        completedOE: currentData.completedOE
+      });
     }
 
-    // Ensure objects exist
+    // anon
+    const currentData = ensureAnonData(resolved.data || {});
     if (!currentData.completedMC) currentData.completedMC = {};
-    if (!currentData.completedOE) currentData.completedOE = {};
+    if (!currentData.oe_detail) currentData.oe_detail = {};
 
     if (question_type === 'multiple_choice') {
-      // Always update the percentage (even on retry)
       currentData.completedMC[lesson_id] = percentage;
-      
-      // Always increment count (including retries)
-      currentData.multiple_choice_questions_done += 5; // Add 5 for MCQ section
+      currentData.multiple_choice_questions_done = (currentData.multiple_choice_questions_done || 0) + 5;
     } else if (question_type === 'open_ended') {
-      // Initialize OE array if not exists [question1_score, question2_score]
-      if (!currentData.completedOE[lesson_id]) {
-        currentData.completedOE[lesson_id] = [0, 0];
-      }
-      
-      // Update the specific question score (question_index is 0 or 1)
-      currentData.completedOE[lesson_id][question_index] = percentage;
-      
-      // Always increment count (including retries)
-      currentData.open_ended_questions_done += 1;
+      if (!currentData.oe_detail) currentData.oe_detail = {};
+      if (!currentData.oe_detail[lesson_id]) currentData.oe_detail[lesson_id] = [0,0];
+      currentData.oe_detail[lesson_id][question_index] = percentage;
+      const scoresArray = currentData.oe_detail[lesson_id];
+      const agg = Math.round(((scoresArray[0]||0)+(scoresArray[1]||0))/2);
+      currentData.open_ended_questions_done = (currentData.open_ended_questions_done || 0) + 1;
     }
 
-    await kv.set(`user:${user.id}`, currentData);
+    await kv.setAnon(`anon:${resolved.id}`, currentData);
 
-    console.log(`[QUESTION ${is_retry ? 'RETRY' : 'COMPLETED'}] User ${user.id} - ${question_type} for ${lesson_id}${question_type === 'open_ended' ? ` (Q${question_index})` : ''}: ${percentage}%`);
+    // Derive completedOE mapping from oe_detail for response compatibility
+    const derivedCompletedOE: any = {};
+    Object.keys(currentData.oe_detail || {}).forEach(k => {
+      const arr = currentData.oe_detail[k] || [];
+      derivedCompletedOE[k] = Math.round(((arr[0]||0)+(arr[1]||0))/2);
+    });
 
     return c.json({ 
       success: true, 
       multiple_choice_questions_done: currentData.multiple_choice_questions_done,
       open_ended_questions_done: currentData.open_ended_questions_done,
       completedMC: currentData.completedMC,
-      completedOE: currentData.completedOE
+      completedOE: derivedCompletedOE
     });
   } catch (error) {
     console.log('Increment question error:', error);
@@ -787,19 +1065,13 @@ app.post("/make-server-ff90fa65/update-achievements", async (c) => {
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
     );
 
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) {
-      return c.json({ error: 'No authorization token' }, 401);
-    }
-
-    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-    if (error || !user) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    const resolved = await resolveActor(c);
+    if (resolved.type === 'unauthenticated' || resolved.type === 'none') {
+      return c.json({ error: 'No authorization token or anon session' }, 401);
     }
 
     const { achievement_type, value } = await c.req.json();
-    const currentData = await kv.get(`user:${user.id}`);
-    
+    const currentData = resolved.type === 'user' ? (await kv.get(`user:${resolved.id}`)) : ensureAnonData(resolved.data || {});
     if (!currentData) {
       return c.json({ error: 'User data not found' }, 404);
     }
@@ -864,14 +1136,15 @@ app.post("/make-server-ff90fa65/update-achievements", async (c) => {
     // Check all achievements and update streak
     checkAchievements(currentData);
 
-    await kv.set(`user:${user.id}`, currentData);
+    if (resolved.type === 'user') {
+      await kv.set(`user:${resolved.id}`, currentData);
+      console.log(`[ACHIEVEMENT] User ${resolved.id} - ${achievement_type} updated`);
+    } else {
+      await kv.setAnon(`anon:${resolved.id}`, currentData);
+      console.log(`[ACHIEVEMENT] Anon ${resolved.id} - ${achievement_type} updated`);
+    }
 
-    console.log(`[ACHIEVEMENT] User ${user.id} - ${achievement_type} updated`);
-
-    return c.json({ 
-      success: true, 
-      achievements: currentData.achievements 
-    });
+    return c.json({ success: true, achievements: currentData.achievements });
   } catch (error) {
     console.log('Update achievement error:', error);
     return c.json({ error: 'Failed to update achievement: ' + String(error) }, 500);
@@ -886,40 +1159,23 @@ app.post("/make-server-ff90fa65/update-recent-courses", async (c) => {
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
     );
 
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) {
-      return c.json({ error: 'No authorization token' }, 401);
-    }
-
-    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-    if (error || !user) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    const resolved = await resolveActor(c);
+    if (resolved.type === 'unauthenticated' || resolved.type === 'none') {
+      return c.json({ error: 'No authorization token or anon session' }, 401);
     }
 
     const { course_id } = await c.req.json();
-    const currentData = await kv.get(`user:${user.id}`);
-    
-    if (!currentData) {
-      return c.json({ error: 'User data not found' }, 404);
-    }
+    const currentData = resolved.type === 'user' ? (await kv.get(`user:${resolved.id}`)) : ensureAnonData(resolved.data || {});
+    if (!currentData) return c.json({ error: 'User data not found' }, 404);
 
-    // Add course_id to beginning of recent_courses array
     if (!currentData.recent_courses) currentData.recent_courses = [];
     currentData.recent_courses = [course_id, ...currentData.recent_courses.filter(id => id !== course_id)];
+    if (currentData.recent_courses.length > 3) currentData.recent_courses = currentData.recent_courses.slice(0,3);
 
-    // Limit to max 3 courses
-    if (currentData.recent_courses.length > 3) {
-      currentData.recent_courses = currentData.recent_courses.slice(0, 3);
-    }
+    if (resolved.type === 'user') await kv.set(`user:${resolved.id}`, currentData);
+    else await kv.setAnon(`anon:${resolved.id}`, currentData);
 
-    await kv.set(`user:${user.id}`, currentData);
-
-    console.log(`[RECENT COURSES] User ${user.id} - Updated recent courses: ${currentData.recent_courses}`);
-
-    return c.json({ 
-      success: true, 
-      recent_courses: currentData.recent_courses 
-    });
+    return c.json({ success: true, recent_courses: currentData.recent_courses });
   } catch (error) {
     console.log('Update recent courses error:', error);
     return c.json({ error: 'Failed to update recent courses: ' + String(error) }, 500);
@@ -934,47 +1190,27 @@ app.post("/make-server-ff90fa65/increment-articles", async (c) => {
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
     );
 
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) {
-      return c.json({ error: 'No authorization token' }, 401);
-    }
-
-    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-    if (error || !user) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    const resolved = await resolveActor(c);
+    if (resolved.type === 'unauthenticated' || resolved.type === 'none') {
+      return c.json({ error: 'No authorization token or anon session' }, 401);
     }
 
     const { article_id } = await c.req.json(); // article_id is now the article title
-    const currentData = await kv.get(`user:${user.id}`);
-    
-    if (!currentData) {
-      return c.json({ error: 'User data not found' }, 404);
-    }
+    const currentData = resolved.type === 'user' ? (await kv.get(`user:${resolved.id}`)) : ensureAnonData(resolved.data || {});
+    if (!currentData) return c.json({ error: 'User data not found' }, 404);
 
-    // Always add article_id to articles_list (allow repeats)
+    if (!currentData.articles_list) currentData.articles_list = [];
     currentData.articles_list.push(article_id);
-    
-    // Count unique articles for articles_read
     const uniqueArticles = [...new Set(currentData.articles_list)];
     currentData.articles_read = uniqueArticles.length;
-
-    // Check if articles_read >= 3, set achievements.three_articles = true
-    if (currentData.articles_read >= 3) {
-      currentData.achievements.three_articles = true;
-    }
-
-    // Call checkAchievements()
+    if (!currentData.achievements) currentData.achievements = {};
+    if (currentData.articles_read >= 3) currentData.achievements.three_articles = true;
     checkAchievements(currentData);
 
-    await kv.set(`user:${user.id}`, currentData);
+    if (resolved.type === 'user') await kv.set(`user:${resolved.id}`, currentData);
+    else await kv.setAnon(`anon:${resolved.id}`, currentData);
 
-    console.log(`[ARTICLES READ] User ${user.id} - Total unique articles: ${currentData.articles_read}, Total reads: ${currentData.articles_list.length}`);
-
-    return c.json({ 
-      success: true, 
-      articles_read: currentData.articles_read,
-      achievements: currentData.achievements
-    });
+    return c.json({ success: true, articles_read: currentData.articles_read, achievements: currentData.achievements });
   } catch (error) {
     console.log('Increment articles error:', error);
     return c.json({ error: 'Failed to increment articles: ' + String(error) }, 500);
@@ -989,37 +1225,42 @@ app.post("/make-server-ff90fa65/update-clicker", async (c) => {
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
     );
 
-    const accessToken = c.req.header('Authorization')?.split(' ')[1];
-    if (!accessToken) {
-      return c.json({ error: 'No authorization token' }, 401);
+    const resolved = await resolveActor(c);
+    if (resolved.type === 'unauthenticated' || resolved.type === 'none') {
+      return c.json({ error: 'No authorization token or anon session' }, 401);
     }
 
-    const { data: { user }, error } = await supabase.auth.getUser(accessToken);
-    if (error || !user) {
-      return c.json({ error: 'Unauthorized' }, 401);
+    const payload = await c.req.json();
+    const { money, money_per_second, buildings, click_value, production_multiplier, click_percent } = payload;
+
+    if (resolved.type === 'user') {
+      const currentData = await kv.get(`user:${resolved.id}`);
+      if (!currentData) return c.json({ error: 'User data not found' }, 404);
+      currentData.corporate_clicker = currentData.corporate_clicker || {};
+      currentData.corporate_clicker.money = money;
+      currentData.corporate_clicker.money_per_second = money_per_second;
+      currentData.corporate_clicker.buildings = buildings;
+      currentData.corporate_clicker.last_played = new Date().toISOString();
+      // store optional click fields
+      if (typeof click_value !== 'undefined') currentData.corporate_clicker.click_value = click_value;
+      if (typeof production_multiplier !== 'undefined') currentData.corporate_clicker.production_multiplier = production_multiplier;
+      if (typeof click_percent !== 'undefined') currentData.corporate_clicker.click_percent = click_percent;
+      await kv.set(`user:${resolved.id}`, currentData);
+      return c.json({ success: true, corporate_clicker: currentData.corporate_clicker });
     }
 
-    const { money, money_per_second, buildings } = await c.req.json();
-    const currentData = await kv.get(`user:${user.id}`);
-    
-    if (!currentData) {
-      return c.json({ error: 'User data not found' }, 404);
-    }
-
-    // Update corporate_clicker state with values from frontend
+    // anon
+    const currentData = ensureAnonData(resolved.data || {});
+    currentData.corporate_clicker = currentData.corporate_clicker || {};
     currentData.corporate_clicker.money = money;
     currentData.corporate_clicker.money_per_second = money_per_second;
     currentData.corporate_clicker.buildings = buildings;
     currentData.corporate_clicker.last_played = new Date().toISOString();
-
-    await kv.set(`user:${user.id}`, currentData);
-
-    console.log(`[CORPORATE CLICKER] User ${user.id} - Updated clicker state`);
-
-    return c.json({ 
-      success: true, 
-      corporate_clicker: currentData.corporate_clicker
-    });
+    if (typeof click_value !== 'undefined') currentData.corporate_clicker.click_value = click_value;
+    if (typeof production_multiplier !== 'undefined') currentData.corporate_clicker.production_multiplier = production_multiplier;
+    if (typeof click_percent !== 'undefined') currentData.corporate_clicker.click_percent = click_percent;
+    await kv.setAnon(`anon:${resolved.id}`, currentData);
+    return c.json({ success: true, corporate_clicker: currentData.corporate_clicker });
   } catch (error) {
     console.log('Update clicker error:', error);
     return c.json({ error: 'Failed to update clicker: ' + String(error) }, 500);

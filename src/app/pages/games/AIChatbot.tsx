@@ -7,6 +7,7 @@ import { Footer } from '../../components/Footer';
 import { Send, Bot, User } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { fetchWithAuthOrAnon } from '../../lib/anon';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -27,23 +28,11 @@ export function AIChatbot() {
     // Track game click/start
     const trackGameStart = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          const { projectId } = await import('../../../utils/supabase/info');
-          await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/start-game`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`,
-              },
-              body: JSON.stringify({
-                game_id: 'ai-chatbot'
-              }),
-            }
-          );
-        }
+        const { projectId } = await import('../../../utils/supabase/info');
+        await fetchWithAuthOrAnon(
+          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/start-game`,
+          { method: 'POST', body: JSON.stringify({ game_id: 'ai-chatbot' }) }
+        );
       } catch (error) {
         console.error('Error tracking game start:', error);
       }
@@ -61,6 +50,15 @@ export function AIChatbot() {
     setIsTyping(true);
 
     try {
+      try {
+        const { projectId } = await import('../../../utils/supabase/info');
+        fetchWithAuthOrAnon(
+          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-ai-calls`,
+          { method: 'POST' }
+        ).catch((e) => console.error('Error incrementing ai calls:', e));
+      } catch (e) {
+        console.error('Error importing projectId for ai calls:', e);
+      }
       // Call OpenRouter API with Llama model
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
@@ -75,7 +73,7 @@ export function AIChatbot() {
           "messages": [
             {
               "role": "system",
-              "content": "You are a helpful career assistant specializing in resume writing, job applications, interview preparation, career planning, and professional development. Provide practical, actionable advice in a friendly and supportive tone."
+              "content": "You are a careful, evidence-based career assistant. Base responses only on the user messages provided. Do not invent facts or guarantee outcomes. If the user's input is ambiguous or insufficient, say so and ask for clarification. Provide practical, concise, and actionable advice in a friendly tone. Do NOT use Markdown or other markup. Reply in plain text with natural newlines."
             },
             ...messages.map(m => ({ role: m.role, content: m.content })),
             {

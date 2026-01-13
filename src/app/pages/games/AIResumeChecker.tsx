@@ -7,6 +7,7 @@ import { Footer } from '../../components/Footer';
 import { CheckCircle, XCircle, Upload } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { fetchWithAuthOrAnon } from '../../lib/anon';
 
 export function AIResumeChecker() {
   const [resumeText, setResumeText] = useState('');
@@ -45,6 +46,16 @@ export function AIResumeChecker() {
   const analyzeResume = async () => {
     setIsAnalyzing(true);
     setFeedback(null);
+    // Track AI call
+    try {
+      const { projectId } = await import('../../../utils/supabase/info');
+      fetchWithAuthOrAnon(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-ai-calls`,
+        { method: 'POST' }
+      ).catch((e) => console.error('Error incrementing ai calls:', e));
+    } catch (e) {
+      console.error('Error importing projectId for ai calls:', e);
+    }
     
     try {
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -62,7 +73,7 @@ export function AIResumeChecker() {
           "messages": [
             {
               "role": "system",
-              "content": "You are an expert resume reviewer and career coach. Provide detailed, personalized feedback on resumes. Be constructive, specific, and actionable. Structure your response in clear sections covering: overall impression, strengths, areas for improvement, and specific recommendations."
+              "content": "You are a careful, evidence-based resume reviewer and career coach. Base feedback only on the resume text provided. Do not invent candidate details or guarantee outcomes. If information is missing or ambiguous, say so and ask for clarification. Provide constructive, specific, and actionable feedback organized into clear paragraphs (overall impression, strengths, areas for improvement, recommendations). Do NOT use Markdown or other markup. Reply in plain text with natural newlines."
             },
             {
               "role": "user",
@@ -150,11 +161,23 @@ export function AIResumeChecker() {
               
               <Button
                 onClick={analyzeResume}
-                disabled={resumeText.trim().length < 50}
-                className="w-full bg-[#D4AF37] hover:bg-[#B8941F] text-white"
+                disabled={resumeText.trim().length === 0 || isAnalyzing}
+                className="w-full bg-[#D4AF37] hover:bg-[#B8941F] active:scale-95 active:brightness-90 text-white"
               >
-                <Upload className="w-5 h-5 mr-2" />
-                Analyze Resume
+                {isAnalyzing ? (
+                  <svg
+                    className="animate-spin w-5 h-5 mr-2 text-white"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                  </svg>
+                ) : (
+                  <Upload className="w-5 h-5 mr-2" />
+                )}
+                {isAnalyzing ? 'Analyzing...' : 'Analyze Resume'}
               </Button>
             </Card>
           </motion.div>

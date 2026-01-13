@@ -6,6 +6,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Button } from '../components/ui/button';
 import { supabase } from '../lib/supabase';
+import { fetchWithAuthOrAnon } from '../lib/anon';
 
 interface Article {
   id: number;
@@ -33,31 +34,17 @@ export function Articles() {
   const handleArticleClick = async (article: Article) => {
     setSelectedArticle(article);
     
-    // Always track article read when user is authenticated (allow repeats)
-    if (isAuthenticated) {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          const { projectId } = await import('../../utils/supabase/info');
-          
-          // Call backend to track article read with article title
-          await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-articles`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`,
-              },
-              body: JSON.stringify({
-                article_id: article.title  // Use article title instead of ID
-              })
-            }
-          );
+    try {
+      const { projectId } = await import('../../utils/supabase/info');
+      await fetchWithAuthOrAnon(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-articles`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ article_id: article.title }),
         }
-      } catch (error) {
-        console.error('Error tracking article read:', error);
-      }
+      );
+    } catch (error) {
+      console.error('Error tracking article read:', error);
     }
   };
 

@@ -47,6 +47,8 @@ export function Navigation({ isAuthenticated, onAuthChange }: NavigationProps) {
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
+      // Clear anon session on explicit logout so anon data resets as users expect
+      try { localStorage.removeItem('anon_id'); } catch (e) { /* ignore */ }
       onAuthChange();
       navigate('/login');
     } catch (error) {

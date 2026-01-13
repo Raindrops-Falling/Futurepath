@@ -6,13 +6,14 @@ import { Textarea } from './ui/textarea';
 import { CheckCircle2, XCircle, ArrowLeft } from 'lucide-react';
 import { LessonData } from '../data/lessonsData';
 import { supabase } from '../lib/supabase';
+import { fetchWithAuthOrAnon } from '../lib/anon';
 
-interface LessonViewProps {
-  lesson: LessonData;
+                "role": "system",
+                "content": "You are a careful, evidence-based career coach and teacher. Review only the student's answer provided for this question. Do not assume unstated details or invent facts. If the answer is ambiguous or insufficient, state that and ask for clarification. Provide brief, constructive, and specific feedback (3-4 sentences). Do NOT use Markdown or other markup. Reply in plain text with natural newlines."
   onClose: () => void;
 }
-
-export function LessonView({ lesson, onClose }: LessonViewProps) {
+        "role": "system",
+        "content": "You are a careful, evidence-based career coach and teacher. Review only the student's answer provided for this question. Do not assume unstated details or invent facts. If the answer is ambiguous or insufficient, state that and ask for clarification. Provide brief, constructive, and specific feedback (3-4 sentences). Do NOT use Markdown or other markup. Reply in plain text with natural newlines."
   const [currentSection, setCurrentSection] = useState<'content' | 'mcq' | 'openended'>('content');
   const [mcqAnswers, setMcqAnswers] = useState<(number | null)[]>(new Array(lesson.mcQuestions.length).fill(null));
   const [mcqSubmitted, setMcqSubmitted] = useState(false);
@@ -20,7 +21,7 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
   const [openEndedSubmitted, setOpenEndedSubmitted] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [aiFeedbacks, setAiFeedbacks] = useState<string[]>(new Array(lesson.openEndedQuestions.length).fill(''));
-  const [loadingFeedback, setLoadingFeedback] = useState<boolean[]>(new Array(lesson.openEndedQuestions.length).fill(false));
+  const [loadingFeedback, setLoadingFeedback] = useState<boolean>(false);
   const [mcqAlreadyCompleted, setMcqAlreadyCompleted] = useState(false);
   const [oeAlreadyCompleted, setOeAlreadyCompleted] = useState(false);
   const [retryModeMCQ, setRetryModeMCQ] = useState(false);
@@ -39,34 +40,28 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
   const checkAuthAndLoadProgress = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session?.user) {
-        setIsAuthenticated(true);
-        
-        // Fetch user profile to check completion status
-        const { projectId } = await import('../../utils/supabase/info');
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/profile`,
-          {
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-          }
-        );
 
-        if (response.ok) {
-          const data = await response.json();
-          const profile = data.profile;
-          
-          // Check if MCQ is completed for this lesson
-          if (profile.completedMC && typeof profile.completedMC === 'object' && lessonId in profile.completedMC) {
-            setMcqAlreadyCompleted(true);
-          }
-          
-          // Check if Open-Ended is completed for this lesson
-          if (profile.completedOE && typeof profile.completedOE === 'object' && lessonId in profile.completedOE) {
-            setOeAlreadyCompleted(true);
-          }
+      if (session?.user) setIsAuthenticated(true);
+
+      // Fetch profile for both authenticated and anonymous users so retry logic works
+      const { projectId } = await import('../../utils/supabase/info');
+      const response = await fetchWithAuthOrAnon(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/profile`,
+        { method: 'GET' }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        const profile = data.profile || {};
+
+        // Check if MCQ is completed for this lesson (works for both auth and anon)
+        if (profile.completedMC && typeof profile.completedMC === 'object' && lessonId in profile.completedMC) {
+          setMcqAlreadyCompleted(true);
+        }
+
+        // Check if Open-Ended is completed for this lesson
+        if (profile.completedOE && typeof profile.completedOE === 'object' && lessonId in profile.completedOE) {
+          setOeAlreadyCompleted(true);
         }
       }
     } catch (error) {
@@ -97,6 +92,17 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
     setGeneratingNewQuestions(true);
     
     try {
+      // Track AI call for MCQ generation (anon or authenticated)
+      try {
+        const { projectId } = await import('../../utils/supabase/info');
+        fetchWithAuthOrAnon(
+          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-ai-calls`,
+          { method: 'POST' }
+        ).catch((e) => console.error('Error incrementing ai calls:', e));
+      } catch (e) {
+        console.error('Error importing projectId for ai calls:', e);
+      }
+
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -145,6 +151,17 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
     setGeneratingNewQuestions(true);
     
     try {
+      // Track AI call for OE generation (anon or authenticated)
+      try {
+        const { projectId } = await import('../../utils/supabase/info');
+        fetchWithAuthOrAnon(
+          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-ai-calls`,
+          { method: 'POST' }
+        ).catch((e) => console.error('Error incrementing ai calls:', e));
+      } catch (e) {
+        console.error('Error importing projectId for ai calls:', e);
+      }
+
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -162,7 +179,7 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
           "messages": [
             {
               "role": "system",
-              "content": "You are an experienced career coach and teacher. Review the student's answer to the question and provide constructive, encouraging feedback. Be specific about what they did well and where they can improve. Keep your feedback to 3-4 sentences."
+              "content": "You are an experienced career coach and teacher. Review the student's answer to the question and provide constructive, encouraging feedback. Be specific about what they did well and where they can improve. Keep your feedback to 3-4 sentences. Do NOT use Markdown or other markup (no **, no headings). Reply in plain text with natural paragraphs and line breaks."
             },
             {
               "role": "user",
@@ -178,7 +195,8 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
         try {
           const questions = JSON.parse(content);
           setAiGeneratedOEs(questions);
-          setOpenEndedAnswers(new Array(lesson.openEndedQuestions.length).fill(''));
+          setOpenEndedAnswers(new Array(questions.length).fill(''));
+          setAiFeedbacks(new Array(questions.length).fill(''));
         } catch {
           alert('Failed to generate new questions. Please try again.');
         }
@@ -193,72 +211,55 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
 
   const submitMCQ = async () => {
     setMcqSubmitted(true);
-    
+
     // Calculate MC percentage
     const mcPercentage = calculateMCQScore();
-    
-    // Always track question completion (even on retry)
-    if (isAuthenticated) {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          const { projectId } = await import('../../utils/supabase/info');
-          
-          // Call backend to increment MC questions with percentage
-          const response = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-question`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`,
-              },
-              body: JSON.stringify({
-                question_type: 'multiple_choice',
-                lesson_id: lessonId,
-                course_id: lesson.courseId,
-                percentage: mcPercentage,
-                is_retry: retryModeMCQ || mcqAlreadyCompleted
-              }),
-            }
-          );
 
-          if (response.ok) {
-            console.log('MCQ completion tracked successfully with percentage:', mcPercentage);
-            
-            // Only add XP on first completion (not on retry)
-            if (!mcqAlreadyCompleted && !retryModeMCQ) {
-              // Add XP based on percentage: (percentage/100) * base XP
-              const baseXP = lesson.mcQuestions.length * 1; // 1 XP per MCQ
-              const earnedXP = Math.round((mcPercentage / 100) * baseXP);
-              const xpResponse = await fetch(
-                `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
-                {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`,
-                  },
-                  body: JSON.stringify({
-                    xp_amount: earnedXP
-                  }),
-                }
-              );
-              
-              if (xpResponse.ok) {
-                console.log('XP added for MCQ completion:', earnedXP);
-              }
-            }
-            
-            // Update course progress
-            await updateCourseProgress(session.access_token, projectId);
-          } else {
-            console.error('Failed to track MCQ completion');
-          }
+    try {
+      const { projectId } = await import('../../utils/supabase/info');
+
+      const resp = await fetchWithAuthOrAnon(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-question`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            question_type: 'multiple_choice',
+            lesson_id: lessonId,
+            course_id: lesson.courseId,
+            percentage: mcPercentage,
+            is_retry: retryModeMCQ || mcqAlreadyCompleted
+          }),
         }
-      } catch (error) {
-        console.error('Error tracking MCQ completion:', error);
+      );
+
+      if (resp.ok) {
+        console.log('MCQ completion tracked successfully with percentage:', mcPercentage);
+
+        // Add XP for this submission (awarded on every submission)
+        try {
+          const baseXP = lesson.mcQuestions.length * 1; // 1 XP per MCQ
+          const earnedXP = Math.round((mcPercentage / 100) * baseXP);
+          if (earnedXP > 0) {
+            const xpResp = await fetchWithAuthOrAnon(
+              `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
+              {
+                method: 'POST',
+                body: JSON.stringify({ xp_amount: earnedXP }),
+              }
+            );
+            if (xpResp.ok) console.log('XP added for MCQ submission:', earnedXP);
+          }
+        } catch (err) {
+          console.error('Failed to add XP for MCQ submission:', err);
+        }
+
+        // Update course progress (works for auth and anon)
+        await updateCourseProgress();
+      } else {
+        console.error('Failed to track MCQ completion');
       }
+    } catch (error) {
+      console.error('Error tracking MCQ completion:', error);
     }
   };
 
@@ -268,8 +269,22 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
     setOpenEndedSubmitted(true);
 
     try {
+      // Use the displayed questions (AI-generated if present)
+      const questionsToUse = aiGeneratedOEs.length > 0 ? aiGeneratedOEs : lesson.openEndedQuestions;
+
       // Get AI feedback for all questions in parallel
-      const feedbackPromises = lesson.openEndedQuestions.map(async (question, qIndex) => {
+      const feedbackPromises = questionsToUse.map(async (question, qIndex) => {
+        // Track AI call for this OE feedback (anon or authenticated)
+        try {
+          const { projectId } = await import('../../utils/supabase/info');
+          fetchWithAuthOrAnon(
+            `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-ai-calls`,
+            { method: 'POST' }
+          ).catch((e) => console.error('Error incrementing ai calls:', e));
+        } catch (e) {
+          console.error('Error importing projectId for ai calls:', e);
+        }
+
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -284,12 +299,12 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
             },
             "messages": [
               {
-                "role": "system",
-                "content": "You are an experienced career coach and teacher. Review the student's answer to the question and provide constructive, encouraging feedback in 3-4 sentences. Focus on being helpful and specific."
-              },
+                  "role": "system",
+                  "content": "You are a careful, evidence-based career coach and teacher. Review only the student's answer provided for this question. Do not assume unstated details or invent facts. If the answer is ambiguous or insufficient, state that and ask for clarification. Provide brief, constructive, and specific feedback (3-4 sentences). Do NOT use Markdown or other markup. Reply in plain text with natural newlines."
+                },
               {
                 "role": "user",
-                "content": `Question: ${question.question}\\n\\nStudent's Answer: ${openEndedAnswers[qIndex]}\\n\\nProvide brief constructive feedback on this response.`
+                "content": `Question: ${question.question}\\n\\nStudent's Answer: ${openEndedAnswers[qIndex] || ''}\\n\\nProvide brief constructive feedback on this response.`
               }
             ]
           })
@@ -307,59 +322,55 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
 
       const results = await Promise.all(feedbackPromises);
       const feedbacks = results.map(r => r.feedback);
-      const scores = results.map(r => r.score);
-      
+      // Force full credit (100%) for each submitted open-ended question
+      const scores = results.map(() => 100);
+
       setAiFeedbacks(feedbacks);
       setOeScores(scores);
 
-      // Track backend
-      if (isAuthenticated) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          const { projectId } = await import('../../utils/supabase/info');
-          
-          // Submit both questions
-          for (let qIndex = 0; qIndex < scores.length; qIndex++) {
-            await fetch(
-              `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-question`,
+      // Track backend for both auth and anon
+      try {
+        const { projectId } = await import('../../utils/supabase/info');
+        for (let qIndex = 0; qIndex < scores.length; qIndex++) {
+          await fetchWithAuthOrAnon(
+            `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-question`,
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                question_type: 'open_ended',
+                lesson_id: lessonId,
+                course_id: lesson.courseId,
+                question_index: qIndex,
+                percentage: 100,
+                is_retry: retryModeOE || oeAlreadyCompleted
+              }),
+            }
+          );
+        }
+
+        // Add XP for each submitted OE question (award on every submission)
+        try {
+          const earnedXP = scores.length;
+          if (earnedXP > 0) {
+            const xpResponse = await fetchWithAuthOrAnon(
+              `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
               {
                 method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${session.access_token}`,
-                },
-                body: JSON.stringify({
-                  question_type: 'open_ended',
-                  lesson_id: lessonId,
-                  course_id: lesson.courseId,
-                  question_index: qIndex,
-                  percentage: scores[qIndex],
-                  is_retry: retryModeOE || oeAlreadyCompleted
-                }),
+                body: JSON.stringify({ xp_amount: earnedXP }),
               }
             );
+            if (xpResponse.ok) console.log('XP added for OE submission:', earnedXP);
           }
-
-          // Add XP
-          if (!oeAlreadyCompleted && !retryModeOE && aiGeneratedOEs.length === 0) {
-            const earnedXP = scores.filter(s => s === 100).length;
-            if (earnedXP > 0) {
-              await fetch(
-                `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
-                {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`,
-                  },
-                  body: JSON.stringify({ xp_amount: earnedXP }),
-                }
-              );
-            }
-          }
-          
-          await updateCourseProgress(session.access_token, projectId);
+        } catch (err) {
+          console.error('Failed to add XP for OE submission:', err);
         }
+
+        // Mark OE as completed locally so UI/progress reflects completion
+        if (!oeAlreadyCompleted) setOeAlreadyCompleted(true);
+
+        await updateCourseProgress();
+      } catch (err) {
+        console.error('Failed to submit OE for anon/auth:', err);
       }
     } catch (error) {
       console.error('Error getting AI feedback:', error);
@@ -414,51 +425,44 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
     );
   };
 
-  const updateCourseProgress = async (accessToken: string, projectId: string) => {
+  const updateCourseProgress = async () => {
     try {
-      // Calculate the current course progress percentage based on completed lessons
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) return;
-      
-      // Fetch current user profile to get completedMC and completedOE
-      const profileResponse = await fetch(
+      const { projectId } = await import('../../utils/supabase/info');
+
+      // Fetch current profile (works for both auth and anon)
+      const profileResponse = await fetchWithAuthOrAnon(
         `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/profile`,
-        {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-        }
+        { method: 'GET' }
       );
-      
+
       if (!profileResponse.ok) {
         console.error('Failed to fetch profile for progress calculation');
         return;
       }
-      
+
       const profileData = await profileResponse.json();
       const completedMC = profileData.profile.completedMC || {};
       const completedOE = profileData.profile.completedOE || {};
-      
+
       // Import lessonsData to get actual lesson count
       const { coursesData } = await import('../data/lessonsData');
       const courseData = coursesData.find(c => c.id === lesson.courseId);
-      
+
       if (!courseData) return;
-      
+
       // Count total lessons and calculate progress
       let totalLessons = 0;
       let totalProgress = 0;
-      
+
       courseData.modules.forEach((module: any) => {
         module.lessons.forEach((lessonItem: any) => {
           totalLessons++;
           const lessonKey = `${lesson.courseId}-${module.id}-${lessonItem.id}`;
-          
+
           // Calculate lesson progress (average of MC and OE percentages)
           const mcProgress = completedMC[lessonKey] || 0;
           const oeData = completedOE[lessonKey];
-          
+
           // Handle new OE format [score1, score2] - average the two scores
           let oeProgress = 0;
           if (Array.isArray(oeData)) {
@@ -466,7 +470,7 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
           } else if (typeof oeData === 'number') {
             oeProgress = oeData; // Fallback for old format
           }
-          
+
           if (mcProgress > 0 && oeProgress > 0) {
             totalProgress += (mcProgress + oeProgress) / 2;
           } else if (mcProgress > 0) {
@@ -476,22 +480,15 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
           }
         });
       });
-      
+
       const courseProgress = totalLessons > 0 ? Math.round(totalProgress / totalLessons) : 0;
-      
-      // Send the calculated percentage to backend
-      const response = await fetch(
+
+      // Send the calculated percentage to backend (auth or anon)
+      const response = await fetchWithAuthOrAnon(
         `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/update-course-progress`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({
-            course_id: lesson.courseId,
-            percentage: courseProgress
-          }),
+          body: JSON.stringify({ course_id: lesson.courseId, percentage: courseProgress }),
         }
       );
 
@@ -599,8 +596,8 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
                   <div className="text-center relative z-10">
                     <h3 className="mb-4">You've already completed this section!</h3>
                     <p className="text-gray-300 mb-6">
-                      You can retry the existing questions (no XP awarded).
-                    </p>
+                        You can retry the existing questions.
+                      </p>
                     <Button 
                       onClick={handleRetryMCQ}
                       className="bg-[#D4AF37] hover:bg-[#B8941F] text-black"
@@ -679,7 +676,7 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
                   <h3 className="mb-4 text-2xl text-[#D4AF37]">Your Score: {calculateMCQScore()}%</h3>
                   <p className="text-gray-200 mb-6">
                     You got {mcqAnswers.filter((answer, i) => answer === lesson.mcQuestions[i].correctAnswer).length} out of {lesson.mcQuestions.length} correct.
-                    {retryModeMCQ && <span className="block mt-2 text-sm italic">Retry mode - no XP awarded</span>}
+                    {retryModeMCQ && <span className="block mt-2 text-sm italic">Retry mode</span>}
                   </p>
                   <Button 
                     onClick={() => setCurrentSection('openended')}
@@ -718,7 +715,7 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
                   <div className="text-center relative z-10">
                     <h3 className="mb-4">You've already completed this section!</h3>
                     <p className="text-gray-300 mb-6">
-                      You can retry the existing questions (no XP awarded).
+                      You can retry the existing questions.
                     </p>
                     <Button 
                       onClick={handleRetryOE}
@@ -794,7 +791,7 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
               {!openEndedSubmitted ? (
                 <Button 
                   onClick={handleOpenEndedSubmit}
-                  disabled={openEndedAnswers.some(ans => ans.trim().length < 50) || loadingFeedback}
+                  disabled={openEndedAnswers.some(ans => ans.trim().length < 25) || loadingFeedback}
                   className="w-full bg-[#D4AF37] hover:bg-[#B8941F] text-white disabled:opacity-50"
                 >
                   {loadingFeedback ? 'Generating AI Feedback...' : 'Submit Answers'}
@@ -807,7 +804,7 @@ export function LessonView({ lesson, onClose }: LessonViewProps) {
                   </div>
                   <p className="text-gray-200">
                     Your responses have been saved and AI feedback has been provided above.
-                    {retryModeOE && <span className="block mt-2 text-sm italic">Retry mode - no XP awarded</span>}
+                    {retryModeOE && <span className="block mt-2 text-sm italic">Retry mode</span>}
                     {aiGeneratedOEs.length > 0 && <span className="block mt-2 text-sm italic">Practice mode - no XP awarded</span>}
                   </p>
                 </Card>

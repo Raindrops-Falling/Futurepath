@@ -3,6 +3,7 @@ import { Camera } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { supabase } from '../lib/supabase';
+import { fetchWithAuthOrAnon } from '../lib/anon';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { GeometricShapes } from '../components/GeometricShapes';
@@ -76,27 +77,18 @@ export function Profile() {
   const fetchProfile = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session?.user) {
-        setLoading(false);
-        return;
+
+      if (session?.user) {
+        setUser({
+          email: session.user.email,
+          id: session.user.id,
+          created_at: session.user.created_at,
+        });
       }
 
-      setUser({
-        email: session.user.email,
-        id: session.user.id,
-        created_at: session.user.created_at,
-      });
-
-      // Fetch user profile from backend KV store
       const { projectId } = await import('../../utils/supabase/info');
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/profile`,
-        {
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-        }
+      const response = await fetchWithAuthOrAnon(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/profile`
       );
 
       if (response.ok) {
@@ -104,15 +96,15 @@ export function Profile() {
         console.log('Profile data:', data);
         setProfile(data.profile);
         setAchievements(data.profile.achievements || {});
-        
+
         // Calculate actual course progress
         const completedMC = data.profile.completedMC || [];
         const completedOE = data.profile.completedOE || [];
         const recentCourses = data.profile.recent_courses || [];
-        
+
         // Build course progress array
         const progress = [];
-        
+
         // If no recent courses, leave empty to show CTA
         if (recentCourses.length > 0) {
           for (const courseId of recentCourses.slice(0, 3)) {
@@ -126,22 +118,13 @@ export function Profile() {
             }
           }
         }
-        
+
         setCourseProgress(progress);
-        
+
         // Trigger achievement check by calling add-xp with 0
-        await fetch(
+        await fetchWithAuthOrAnon(
           `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({
-              xp_amount: 0
-            }),
-          }
+          { method: 'POST', body: JSON.stringify({ xp_amount: 0 }) }
         );
       } else {
         console.error('Failed to fetch profile:', await response.text());

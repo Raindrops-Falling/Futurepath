@@ -6,6 +6,7 @@ import { Textarea } from '../../components/ui/textarea';
 import { GeometricShapes } from '../../components/GeometricShapes';
 import { Footer } from '../../components/Footer';
 import { supabase } from '../../lib/supabase';
+import { fetchWithAuthOrAnon } from '../../lib/anon';
 import { DollarSign, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 interface NegotiationScenario {
@@ -76,23 +77,11 @@ export function SalaryNegotiator() {
 
   const trackGameStart = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.access_token) {
-        const { projectId } = await import('../../../utils/supabase/info');
-        await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/start-game`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({
-              game_id: 'salary-negotiator'
-            }),
-          }
-        );
-      }
+      const { projectId } = await import('../../../utils/supabase/info');
+      await fetchWithAuthOrAnon(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/start-game`,
+        { method: 'POST', body: JSON.stringify({ game_id: 'salary-negotiator' }) }
+      );
     } catch (error) {
       console.error('Error tracking game start:', error);
     }
@@ -127,6 +116,17 @@ export function SalaryNegotiator() {
 
     try {
       // Get AI response from employer
+      // Track AI call (anon or authenticated)
+      try {
+        const { projectId } = await import('../../../utils/supabase/info');
+        fetchWithAuthOrAnon(
+          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-ai-calls`,
+          { method: 'POST' }
+        ).catch((e) => console.error('Error incrementing ai calls:', e));
+      } catch (e) {
+        console.error('Error importing projectId for ai calls:', e);
+      }
+
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -144,7 +144,7 @@ export function SalaryNegotiator() {
           "messages": [
             {
               "role": "system",
-              "content": `You are a hiring manager in a salary negotiation. The initial offer was $${selectedScenario!.initialOffer.toLocaleString()}. The market rate is $${selectedScenario!.marketRate.toLocaleString()}. You have a budget up to $${selectedScenario!.marketRate.toLocaleString()} but want to stay lower if possible. Respond realistically to the candidate's negotiation. If they're being reasonable and professional, you can move up. If they're being aggressive or unreasonable, push back. After 3-4 rounds of negotiation, either accept their final request (if reasonable) or make a final offer. Keep responses to 2-3 sentences. If you make a new offer, state it clearly like "We can go up to $X". If you're ending negotiation, say "This is our final offer" or "We accept your request".`
+                "content": `You are a realistic hiring manager in a salary negotiation. Base responses only on the scenario context and conversation provided. Do not invent candidate details or guarantee outcomes. If information is insufficient, note the ambiguity and respond conservatively. Keep responses realistic and concise (2-3 sentences). If you make a new offer, state it clearly like "We can go up to $X". If you're ending negotiation, say "This is our final offer" or "We accept your request". Do NOT use Markdown or other markup. Reply in plain text with natural paragraphs and line breaks.`
             },
             {
               "role": "user",
@@ -162,24 +162,15 @@ export function SalaryNegotiator() {
         const newInteractions = chatbotInteractions + 1;
         setChatbotInteractions(newInteractions);
         
-        if (isAuthenticated) {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.access_token) {
-            const { projectId } = await import('../../../utils/supabase/info');
-            await fetch(
-              `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
-              {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${session.access_token}`,
-                },
-                body: JSON.stringify({
-                  xp_amount: 3 // 3 XP per chatbot interaction
-                }),
-              }
-            );
-          }
+        // Award 3 XP for each chatbot interaction (auth or anon)
+        try {
+          const { projectId } = await import('../../../utils/supabase/info');
+          await fetchWithAuthOrAnon(
+            `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
+            { method: 'POST', body: JSON.stringify({ xp_amount: 3 }) }
+          );
+        } catch (error) {
+          console.error('Error awarding XP for interaction:', error);
         }
 
         // Extract offer from message if present
@@ -240,6 +231,17 @@ export function SalaryNegotiator() {
     }
 
     try {
+      // Track AI call for final feedback
+      try {
+        const { projectId } = await import('../../../utils/supabase/info');
+        fetchWithAuthOrAnon(
+          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-ai-calls`,
+          { method: 'POST' }
+        ).catch((e) => console.error('Error incrementing ai calls:', e));
+      } catch (e) {
+        console.error('Error importing projectId for ai calls:', e);
+      }
+
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -257,7 +259,7 @@ export function SalaryNegotiator() {
           "messages": [
             {
               "role": "system",
-              "content": "You are a career coach providing feedback on salary negotiation performance. Be constructive and specific. Provide 3-4 actionable tips."
+                "content": "You are a careful, evidence-based negotiation coach. Provide feedback grounded only in the negotiation transcript and final offer. Do not speculate about unstated facts or guarantee outcomes. If input is unclear, say so and ask for clarification. Offer 3-4 concise, actionable tips. Do NOT use Markdown or other markup. Reply in plain text with natural newlines."
             },
             {
               "role": "user",
@@ -279,41 +281,20 @@ export function SalaryNegotiator() {
       setLoading(false);
     }
 
-    // Award game completion XP
-    if (isAuthenticated) {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          const { projectId } = await import('../../../utils/supabase/info');
-          
-          await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`,
-              },
-              body: JSON.stringify({
-                xp_amount: 15 // 15 XP for game completion
-              }),
-            }
-          );
+    // Award game completion XP (auth or anon)
+    try {
+      const { projectId } = await import('../../../utils/supabase/info');
+      await fetchWithAuthOrAnon(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
+        { method: 'POST', body: JSON.stringify({ xp_amount: 15 }) }
+      );
 
-          await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-game`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`,
-              },
-            }
-          );
-        }
-      } catch (error) {
-        console.error('Error tracking game completion:', error);
-      }
+      await fetchWithAuthOrAnon(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-game`,
+        { method: 'POST' }
+      );
+    } catch (error) {
+      console.error('Error tracking game completion:', error);
     }
   };
 
