@@ -101,6 +101,17 @@ export function AIChatbot() {
         content: aiContent
       };
       setMessages(prev => [...prev, aiResponse]);
+
+      // Award XP for chatbot interaction (auth or anon)
+      try {
+        const { projectId } = await import('../../../utils/supabase/info');
+        await fetchWithAuthOrAnon(
+          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
+          { method: 'POST', body: JSON.stringify({ xp_amount: 3 }) }
+        );
+      } catch (err) {
+        console.error('Error awarding XP:', err);
+      }
     } catch (error) {
       console.error('AI Error:', error);
       const errorMessage: Message = {

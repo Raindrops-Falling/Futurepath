@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 export function GeometricShapes() {
   return (
     <div className="fixed inset-0 pointer-events-none overflow-hidden z-[5]">
-      {/* Kept minimal: only two subtle shapes to reduce visual noise */}
+      {/* Only circles - no lines or other shapes */}
       <motion.div
         className="absolute top-[18%] left-[12%] w-20 h-20 border-2 border-[#D4AF37] rounded-full opacity-18"
         animate={{ scale: [1, 1.15, 1], y: [0, -10, 0] }}
@@ -14,6 +14,12 @@ export function GeometricShapes() {
         className="absolute bottom-[18%] right-[14%] w-24 h-24 border-2 border-[#D4AF37] rounded-full opacity-14"
         animate={{ scale: [1, 1.2, 1], x: [0, -12, 0] }}
         transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
+      />
+
+      <motion.div
+        className="absolute top-[45%] right-[25%] w-16 h-16 border-2 border-[#D4AF37] rounded-full opacity-10"
+        animate={{ scale: [1, 1.1, 1], y: [0, 8, 0] }}
+        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
       />
     </div>
   );

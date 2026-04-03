@@ -384,6 +384,10 @@ export function CareerSimulation() {
     try {
       const { projectId } = await import('../../../utils/supabase/info');
       await fetchWithAuthOrAnon(
+        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-ai-calls`,
+        { method: 'POST' }
+      ).catch((e) => console.error('Error incrementing ai calls:', e));
+      await fetchWithAuthOrAnon(
         `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
         { method: 'POST', body: JSON.stringify({ xp_amount: 15 }) }
       );

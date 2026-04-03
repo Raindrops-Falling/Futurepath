@@ -90,6 +90,17 @@ export function AIResumeChecker() {
       } else {
         setFeedback('Unable to generate deep response. Please try again.');
       }
+
+      // Award XP for resume analysis (auth or anon)
+      try {
+        const { projectId } = await import('../../../utils/supabase/info');
+        await fetchWithAuthOrAnon(
+          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
+          { method: 'POST', body: JSON.stringify({ xp_amount: 5 }) }
+        );
+      } catch (err) {
+        console.error('Error awarding XP:', err);
+      }
     } catch (error) {
       console.error('Error getting deep response:', error);
       setFeedback('Error generating deep response. Please try again.');

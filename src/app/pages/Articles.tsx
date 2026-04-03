@@ -76,7 +76,7 @@ Preparation is the cornerstone of interview success:
 
 **Trends in Modern Interviews**
 
-The rise of AI-powered recruitment platforms means that many interviews begin with digital screening tools. Candidates must also prepare for virtual interviews, video-based assessments, and timed problem-solving tasks. Adapting to these technological changes is crucial for staying competitive.
+The rise of AI-powered recruitment platforms means that many interviews begin with digital screening tools. Candidates must also prepare for virtual interviews, video-based assessments, and timed problem-solving tasks. Adapting to these technological changes is crucial for staying competitive. One should adapt to not only modern frameworks in interviews, but simple communication skills as well.
 
 **Conclusion**
 
@@ -92,7 +92,7 @@ Interviews are both art and science. With research, practice, and adaptability, 
       content: `
 **Networking Is No Longer Optional**
 
-Professional networking is increasingly recognized as a critical factor for career development. A significant percentage of jobs are filled through networking, highlighting the importance of building meaningful professional relationships. Networking goes beyond exchanging business cards—it is about cultivating trust and reciprocity over time.
+Professional networking is increasingly recognized as a critical factor for career development. A significant percentage of jobs are filled through networking, highlighting the importance of building meaningful professional relationships. Networking goes beyond exchanging business cards, it is about cultivating trust and reciprocity over time.
 
 **The Mechanics of Effective Networking**
 
@@ -150,7 +150,7 @@ Visual resumes, portfolios, and interactive digital profiles are gaining tractio
 
 **Conclusion**
 
-A well-crafted resume is a career accelerator. By combining clarity, relevance, and evidence-based results, professionals can significantly improve their chances of being noticed in a crowded job market. Strategic resume building is not just about landing a job—it's about shaping your long-term career trajectory.
+A well-crafted resume is a career accelerator. By combining clarity, relevance, and evidence-based results, professionals can significantly improve their chances of being noticed in a crowded job market. Strategic resume building is not just about landing a job, it's about shaping your long-term career trajectory.
       `
     }
   ];
@@ -223,7 +223,7 @@ A well-crafted resume is a career accelerator. By combining clarity, relevance, 
           className="mb-20 text-center"
         >
           <h1 className="text-6xl mb-6">
-            Insights for your <span className="text-[#D4AF37]">career<br />growth</span>
+            Articles for your <span className="text-[#D4AF37]">career<br />growth</span>
           </h1>
           <p className="text-lg text-gray-600 max-w-2xl mx-auto">
             Expert-written articles covering essential career topics, from interview preparation to resume building.

@@ -8,12 +8,12 @@ import { LessonData } from '../data/lessonsData';
 import { supabase } from '../lib/supabase';
 import { fetchWithAuthOrAnon } from '../lib/anon';
 
-                "role": "system",
-                "content": "You are a careful, evidence-based career coach and teacher. Review only the student's answer provided for this question. Do not assume unstated details or invent facts. If the answer is ambiguous or insufficient, state that and ask for clarification. Provide brief, constructive, and specific feedback (3-4 sentences). Do NOT use Markdown or other markup. Reply in plain text with natural newlines."
+interface LessonViewProps {
+  lesson: LessonData;
   onClose: () => void;
 }
-        "role": "system",
-        "content": "You are a careful, evidence-based career coach and teacher. Review only the student's answer provided for this question. Do not assume unstated details or invent facts. If the answer is ambiguous or insufficient, state that and ask for clarification. Provide brief, constructive, and specific feedback (3-4 sentences). Do NOT use Markdown or other markup. Reply in plain text with natural newlines."
+
+export function LessonView({ lesson, onClose }: LessonViewProps) {
   const [currentSection, setCurrentSection] = useState<'content' | 'mcq' | 'openended'>('content');
   const [mcqAnswers, setMcqAnswers] = useState<(number | null)[]>(new Array(lesson.mcQuestions.length).fill(null));
   const [mcqSubmitted, setMcqSubmitted] = useState(false);
@@ -269,21 +269,26 @@ import { fetchWithAuthOrAnon } from '../lib/anon';
     setOpenEndedSubmitted(true);
 
     try {
+      // Track AI calls for OE submission (2 calls total)
+      try {
+        const { projectId } = await import('../../utils/supabase/info');
+        await fetchWithAuthOrAnon(
+          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-ai-calls`,
+          { method: 'POST' }
+        );
+        await fetchWithAuthOrAnon(
+          `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-ai-calls`,
+          { method: 'POST' }
+        );
+      } catch (e) {
+        console.error('Error incrementing ai calls:', e);
+      }
+
       // Use the displayed questions (AI-generated if present)
       const questionsToUse = aiGeneratedOEs.length > 0 ? aiGeneratedOEs : lesson.openEndedQuestions;
 
       // Get AI feedback for all questions in parallel
       const feedbackPromises = questionsToUse.map(async (question, qIndex) => {
-        // Track AI call for this OE feedback (anon or authenticated)
-        try {
-          const { projectId } = await import('../../utils/supabase/info');
-          fetchWithAuthOrAnon(
-            `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-ai-calls`,
-            { method: 'POST' }
-          ).catch((e) => console.error('Error incrementing ai calls:', e));
-        } catch (e) {
-          console.error('Error importing projectId for ai calls:', e);
-        }
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
           method: 'POST',
@@ -348,19 +353,16 @@ import { fetchWithAuthOrAnon } from '../lib/anon';
           );
         }
 
-        // Add XP for each submitted OE question (award on every submission)
+        // Add XP for OE submission (4 XP total)
         try {
-          const earnedXP = scores.length;
-          if (earnedXP > 0) {
-            const xpResponse = await fetchWithAuthOrAnon(
-              `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
-              {
-                method: 'POST',
-                body: JSON.stringify({ xp_amount: earnedXP }),
-              }
-            );
-            if (xpResponse.ok) console.log('XP added for OE submission:', earnedXP);
-          }
+          const xpResponse = await fetchWithAuthOrAnon(
+            `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
+            {
+              method: 'POST',
+              body: JSON.stringify({ xp_amount: 4 }),
+            }
+          );
+          if (xpResponse.ok) console.log('XP added for OE submission: 4');
         } catch (err) {
           console.error('Failed to add XP for OE submission:', err);
         }
@@ -461,15 +463,7 @@ import { fetchWithAuthOrAnon } from '../lib/anon';
 
           // Calculate lesson progress (average of MC and OE percentages)
           const mcProgress = completedMC[lessonKey] || 0;
-          const oeData = completedOE[lessonKey];
-
-          // Handle new OE format [score1, score2] - average the two scores
-          let oeProgress = 0;
-          if (Array.isArray(oeData)) {
-            oeProgress = (oeData[0] + oeData[1]) / 2;
-          } else if (typeof oeData === 'number') {
-            oeProgress = oeData; // Fallback for old format
-          }
+          const oeProgress = completedOE[lessonKey] || 0;
 
           if (mcProgress > 0 && oeProgress > 0) {
             totalProgress += (mcProgress + oeProgress) / 2;
@@ -765,19 +759,6 @@ import { fetchWithAuthOrAnon } from '../lib/anon';
                     
                     {openEndedSubmitted && aiFeedbacks[qIndex] && (
                       <Card className="mt-4 p-6 bg-black text-white border-2 border-[#D4AF37] relative overflow-hidden">
-                        {/* Geometric Designs */}
-                        <motion.div
-                          className="absolute top-2 right-2 w-8 h-8 border-2 border-[#D4AF37]"
-                          style={{ clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' }}
-                          animate={{ rotate: 360 }}
-                          transition={{ duration: 15, repeat: Infinity, ease: 'linear' }}
-                        />
-                        <motion.div
-                          className="absolute bottom-2 left-2 w-6 h-6 border-2 border-[#D4AF37] rounded-full"
-                          animate={{ scale: [1, 1.2, 1] }}
-                          transition={{ duration: 2, repeat: Infinity }}
-                        />
-                        
                         <p className="text-sm relative z-10">
                           <strong className="text-[#D4AF37]">AI Feedback:</strong>
                           <span className="text-gray-200 ml-2">{aiFeedbacks[qIndex]}</span>

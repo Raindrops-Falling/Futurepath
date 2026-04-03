@@ -34,62 +34,47 @@ export const lessons: Record<string, LessonData> = {
     content: `
 **Lesson Overview**
 
-A resume is not a life history or a full record of everything you have done. Its primary purpose is to **earn you an interview**. Employers typically spend 6–10 seconds scanning a resume before deciding whether to continue reading or move on. Understanding how resumes are used in real hiring situations helps you design content that works with employer behavior rather than against it.
+After completing this lesson, you will understand how employers scan resumes, what triggers rejection in the first 10 seconds, and how to structure content that passes both automated systems and human review. You will be able to identify which resume elements demand immediate attention and which waste space.
 
-**What a Resume Is (and Is Not)**
+**What This Means in Practice**
 
-A resume is a **marketing document**. It markets your skills, experience, and value to a specific role.
+Employers spend 6 to 10 seconds scanning your resume before deciding whether to continue reading. During this time, they look for job titles that match the role, relevant skills, and clear evidence of results. If your resume does not answer "Can this person do the job?" within seconds, it moves to the rejection pile.
 
-It is not:
+Applicant Tracking Systems (ATS) scan resumes before humans see them. These systems search for keywords from the job description, standard section headings like "Work Experience" and "Skills," and simple formatting. Creative layouts with graphics or unusual fonts often fail ATS screening, which means qualified candidates never reach a recruiter.
 
-- A complete autobiography
+**Key Concepts**
 
-- A place to list every job or class you've ever taken
+**A Resume Is a Marketing Document, Not a Biography**
 
-- A personal statement or cover letter
+Your resume exists to earn an interview. It highlights skills and experience relevant to a specific role, not every job you have held or course you have taken. Including unrelated experience dilutes your message and makes it harder for employers to identify your qualifications.
 
-Instead, it should highlight only what is most relevant to the job you are targeting.
+**Employers Scan for Evidence of Job Fit**
 
-**How Employers Actually Use Resumes**
+Hiring managers review dozens or hundreds of resumes for each position. They scan for job titles, tools, certifications, and results that align with the role. Vague descriptions or missing keywords cause immediate rejection, even when candidates are qualified.
 
-Hiring managers often review dozens—or hundreds—of applications. To manage this volume, they scan for:
+**ATS Systems Filter Before Human Review**
 
-- Job titles and experience that match the role
+Many companies use software to rank and filter applications. ATS systems parse resumes for keywords, standard headings, and clear formatting. Resumes with tables, images, or non-standard fonts may be misread or rejected automatically. Tailoring language to match job descriptions improves your chances of passing automated screening.
 
-- Relevant skills and tools
+**Relevance Determines Success**
 
-- Evidence of results or impact
-
-- Clear formatting that is easy to read
-
-If your resume does not quickly answer \"Can this person do the job?\" it will likely be rejected.
-
-**Applicant Tracking Systems (ATS)**
-
-Many companies use Applicant Tracking Systems to filter resumes before a human ever sees them. These systems scan for:
-
-- Keywords from the job description
-
-- Standard section headings
-
-- Clear, simple formatting
-
-A resume that looks creative but lacks relevant keywords may never reach a recruiter.
+Generic resumes that list every past responsibility without connection to the target role rarely advance. Tailored resumes that emphasize relevant skills, tools, and outcomes perform better with both ATS and recruiters. Every line should support your candidacy for the specific job.
 
 **Scenario-Based Insight**
 
-Imagine two candidates applying for the same administrative assistant role. One submits a general resume listing every job they've had. The other tailors their resume to emphasize scheduling, communication, and software skills mentioned in the job posting. Even if both are qualified, the tailored resume is far more likely to be selected.
+Two candidates apply for an administrative assistant role. The job posting emphasizes scheduling, communication, and proficiency in Microsoft Office. Candidate A submits a resume listing every job held since high school, including retail and food service roles, with no mention of scheduling or office software. Candidate B tailors the resume to highlight experience coordinating schedules, managing communications, and using Excel and Outlook. Candidate B's resume answers the employer's question immediately, while Candidate A's resume requires the recruiter to search for relevance. Candidate B advances to the interview stage.
 
 **Key Takeaways**
 
-- Your resume's goal is to secure an interview, not explain everything
+Your resume's only goal is to secure an interview, not to document your entire work history.
 
-- Employers scan resumes quickly and look for relevance
+Employers and ATS systems scan resumes quickly, prioritizing relevance and clarity over creativity.
 
-- Tailoring your resume improves visibility and selection
+Tailor your resume to each role by emphasizing skills, tools, and results mentioned in the job description.
 
-- Clarity and focus matter more than length or creativity
+Simple formatting with standard headings improves ATS performance and human readability.
 
+Every section and bullet point should directly support your fit for the target position.
     `,
     mcQuestions: [
       {
@@ -166,101 +151,51 @@ Imagine two candidates applying for the same administrative assistant role. One 
     content: `
 **Lesson Overview**
 
-A strong resume is built from clearly defined sections that employers expect to see. When these sections are missing, poorly organized, or filled with the wrong information, recruiters struggle to find what they need—often leading to rejection. This lesson explains the standard resume sections, what belongs in each one, and how to decide what information strengthens your application.
+After completing this lesson, you will be able to structure a resume using standard sections that employers recognize and scan efficiently. You will know what information belongs in each section, how to prioritize content based on your experience level, and which details reduce clarity rather than strengthen your application.
 
-**Why Resume Structure Matters**
+**What This Means in Practice**
 
-Employers scan resumes using a mental checklist. They expect to quickly locate:
+Employers scan resumes using a predictable pattern. They look for contact information, professional summary, work experience, education, and skills in that order. When sections are missing, labeled with creative titles, or filled with irrelevant content, recruiters waste time searching for basic information. This frustration often leads to rejection.
 
-- Who you are and how to contact you
+ATS systems also rely on standard section headings to parse information correctly. Creative titles like "My Journey" or "Career Highlights" may confuse the software, causing your qualifications to be categorized incorrectly or ignored entirely.
 
-- What roles you've held
+**Key Concepts**
 
-- What skills you bring
+**Contact Information Must Be Clear and Professional**
 
-- Evidence that you can perform the job
+This section appears at the top of your resume and includes your full name, phone number, professional email address, and city and state. Do not include your full street address, age, photo, or links to personal social media unless the job requires it. Complicated or unprofessional contact details slow down follow-up and create negative first impressions.
 
-When information is placed in the wrong section or unclear, it slows down scanning and reduces your chances.
+**Professional Summaries Provide Immediate Context**
 
-**Essential Resume Sections**
+A professional summary is 2 to 3 sentences that state your role, years of experience, key skills, and value proposition. This section answers "Who is this candidate?" before the recruiter reads further. Write it to align with the target role, not as a generic career objective. Focus on what you offer the employer, not what you want from them.
 
-**Contact Information**
+**Work Experience Shows Applied Skills and Results**
 
-This section should appear at the top and include:
+This is the most critical section for most candidates. Each role should list your job title, company name, employment dates, and 3 to 5 bullet points describing responsibilities and outcomes. Prioritize accomplishments over duties. Use action verbs and quantify results when possible. Employers evaluate this section to determine whether your past work aligns with their needs.
 
-- Full name
+**Education Placement Depends on Career Stage**
 
-- Phone number
+List your degree or certification, school name, and graduation date. Recent graduates with limited work experience should place education near the top of the resume. Experienced professionals should place it below work experience. Include relevant coursework or honors only if they strengthen your application for the specific role.
 
-- Professional email address
+**Skills Sections Improve ATS Performance and Readability**
 
-- City and state (optional but recommended)
-
-Avoid unnecessary details like full mailing addresses or personal social media accounts.
-
-*Professional Summary (Optional but Powerful)*
-
-A brief 2–3 line snapshot of your experience and strengths. Use this section to:
-
-- State your role or career focus
-
-- Highlight key skills or experience
-
-- Align yourself with the target job
-
-This is not an objective statement about what you want—it's about what you offer.
-
-**Work Experience**
-
-This is the most critical section for most resumes. Each role should include:
-
-- Job title
-
-- Company name
-
-- Dates of employment
-
-- Bullet points describing responsibilities and results
-
-Focus on accomplishments, not just duties.
-
-**Education**
-
-Include:
-
-- Degree or certification
-
-- School name
-
-- Graduation date (or expected date)
-
-Recent graduates may place education above work experience.
-
-*Skills Section*
-
-This section allows employers and ATS systems to quickly see your capabilities. Include:
-
-- Technical skills
-
-- Software or tools
-
-- Job-specific competencies
-
-Avoid vague traits like \"hardworking\" or \"motivated.\"
+A dedicated skills section lists technical abilities, software, tools, and job-specific competencies. This section allows ATS systems to quickly match your qualifications to job requirements. It also helps recruiters scan for must-have skills without reading full job descriptions. Avoid vague traits like "hardworking" or "team player." Focus on measurable, teachable skills.
 
 **Scenario-Based Insight**
 
-A hiring manager reviewing marketing resumes expects to see skills like analytics tools, campaign experience, and content creation. If these are buried in paragraphs instead of listed clearly, the candidate may be overlooked—even if qualified.
+A hiring manager reviews 50 resumes for a marketing coordinator role. The job requires experience with Google Analytics, content creation, and campaign management. One candidate buries these skills in paragraph-form job descriptions. Another candidate lists them clearly in a skills section and references them in work experience bullets. The second candidate's resume is easier to scan, matches ATS keywords, and advances to the interview stage.
 
 **Key Takeaways**
 
-- Employers expect standard resume sections
+Use standard section headings like "Work Experience," "Education," and "Skills" to improve ATS compatibility and recruiter scanning.
 
-- Clear structure improves scan speed
+Contact information must be simple, professional, and easy to locate at the top of the resume.
 
-- Each section has a specific purpose
+Professional summaries provide immediate context and alignment with the target role.
 
-- Placement depends on experience level
+Prioritize work experience and education based on your career stage and the strength of each section.
+
+Skills sections should list concrete, measurable abilities rather than vague personality traits.
     `,
     mcQuestions: [
       {

@@ -110,17 +110,17 @@ export function Home() {
               {
                 number: '01',
                 title: 'Neuroscience-Backed Learning',
-                description: 'Based on key neuroscience principles, students need greater forms of active recall to learn properly. Beyond multiple choice questions, our AI tools activate higher-order thinking that helps you succeed and remember forever.',
+                description: 'Our AI tools activate higher-order thinking that helps you succeed and remember forever.',
               },
               {
                 number: '02',
                 title: 'Real-World Skill Practice',
-                description: 'Engage with interactive simulations and hands-on exercises that mirror actual workplace scenarios, ensuring you develop practical, job-ready competencies.',
+                description: 'Engage with interactive simulations and hands-on exercises that mirror actual workplace scenarios.',
               },
               {
                 number: '03',
-                title: 'Skill Gap Analysis',
-                description: 'Identify your strengths and areas for improvement with comprehensive assessments, then receive targeted recommendations to bridge gaps and accelerate your professional growth.',
+                title: 'Gamified Learning Environments',
+                description: 'Gamified learning experiences that promote engagement, retention, and active skill development.',
               },
             ].map((item, index) => (
               <motion.div
@@ -136,8 +136,8 @@ export function Home() {
                     <div className="text-7xl font-bold text-[#D4AF37]/20 mb-4 group-hover:text-[#D4AF37]/30 transition-colors">
                       {item.number}
                     </div>
-                    <h3 className="mb-4 text-2xl">{item.title}</h3>
-                    <p className="text-gray-600 leading-relaxed">{item.description}</p>
+                    <h3 className="mb-4 text-2xl text-center">{item.title}</h3>
+                    <p className="text-gray-600 leading-relaxed text-center p-[0px] m-[0px]">{item.description}</p>
                   </div>
                 </Card>
               </motion.div>
@@ -149,19 +149,7 @@ export function Home() {
         <section className="py-32 px-6 bg-black text-white relative overflow-hidden">
           {/* Geometric shapes visible in black background */}
           <div className="absolute inset-0 pointer-events-none overflow-hidden z-0 opacity-60">
-            <motion.div
-              className="absolute top-20 left-[15%] w-24 h-24 border-2 border-[#D4AF37]"
-              style={{ clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' }}
-              animate={{
-                y: [0, -20, 0],
-                rotate: [0, 180, 360],
-              }}
-              transition={{
-                duration: 10,
-                repeat: Infinity,
-                ease: 'easeInOut',
-              }}
-            />
+            
             <motion.div
               className="absolute bottom-20 right-[10%] w-28 h-28 border-2 border-[#D4AF37] rounded-full"
               animate={{

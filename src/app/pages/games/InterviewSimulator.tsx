@@ -142,7 +142,7 @@ export function InterviewSimulator() {
         const feedbackText = data.choices?.[0]?.message?.content || 'Good response!';
         setFeedback([...feedback, feedbackText]);
         
-        // Track chatbot interaction for XP (3 XP per interaction)
+        // Award XP for chatbot interactions (3 XP per interaction)
         const newInteractions = chatbotInteractions + 1;
         setChatbotInteractions(newInteractions);
         
@@ -153,7 +153,7 @@ export function InterviewSimulator() {
             `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
             {
               method: 'POST',
-              body: JSON.stringify({ xp_amount: 3 }),
+              body: JSON.stringify({ xp_amount: 15 }),
             }
           );
         } catch (err) {
@@ -202,19 +202,22 @@ export function InterviewSimulator() {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          model: "meta-llama/llama-3.2-8b-instruct",
-          messages: [
-            {
-              role: "system",
-              content: "You are an experienced career coach. Provide overall feedback on interview performance with specific actionable advice. Keep to 4-5 sentences."
-            },
-            {
-              role: "user",
-              content: `A candidate completed a ${selectedType} interview with ${finalAnswers.length} questions. Provide overall performance feedback and tips for improvement.`
+          "model": "meta-llama/llama-3.2-8b-instruct",
+          "provider": {
+            "order": ["deepinfra"],
+            "allow_fallbacks": true
+          },
+          "messages": [
             {
               "role": "system",
-              "content": "You are a careful, evidence-based career coach. Provide overall feedback only based on the answers supplied. Do not invent context or guarantee outcomes. If input is insufficient, state that and ask for clarification. Provide concise, actionable overall feedback (4-5 sentences). Do NOT use Markdown or other markup. Reply in plain text with natural newlines."
+              "content": "You are an experienced career coach. Provide overall feedback on interview performance with specific actionable advice. Keep to 4-5 sentences."
             },
+            {
+              "role": "user",
+              "content": `A candidate completed a ${selectedType} interview with ${finalAnswers.length} questions. Provide overall performance feedback and tips for improvement.`
+            }
+          ]
+        })
       });
 
       if (response.ok) {
@@ -233,11 +236,6 @@ export function InterviewSimulator() {
     // Award game completion XP (works for auth or anon)
     try {
       const { projectId } = await import('../../../utils/supabase/info');
-      await fetchWithAuthOrAnon(
-        `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/add-xp`,
-        { method: 'POST', body: JSON.stringify({ xp_amount: 15 }) }
-      );
-
       await fetchWithAuthOrAnon(
         `https://${projectId}.supabase.co/functions/v1/make-server-ff90fa65/increment-game`,
         { method: 'POST' }
@@ -396,7 +394,7 @@ export function InterviewSimulator() {
 
               <div className="bg-white p-4 rounded-lg mb-6">
                 <p className="text-sm text-gray-600">
-                  <strong>XP Earned:</strong> {chatbotInteractions * 3} XP from feedback + 15 XP completion bonus = {chatbotInteractions * 3 + 15} XP total
+                  <strong>XP Earned:</strong> {chatbotInteractions * 15} XP from answers
                 </p>
               </div>
             </Card>
