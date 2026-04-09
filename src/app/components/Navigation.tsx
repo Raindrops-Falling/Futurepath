@@ -69,9 +69,6 @@ export function Navigation({ isAuthenticated, onAuthChange }: NavigationProps) {
           <Link to="/" className="hover:text-[#D4AF37] transition-colors">
             Home
           </Link>
-          <Link to="/articles" className="hover:text-[#D4AF37] transition-colors">
-            Articles
-          </Link>
           <Link to="/courses" className="hover:text-[#D4AF37] transition-colors">
             Courses
           </Link>
@@ -130,13 +127,6 @@ export function Navigation({ isAuthenticated, onAuthChange }: NavigationProps) {
               onClick={() => setMobileMenuOpen(false)}
             >
               Home
-            </Link>
-            <Link 
-              to="/articles" 
-              className="hover:text-[#D4AF37] transition-colors py-2"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              Articles
             </Link>
             <Link 
               to="/courses" 

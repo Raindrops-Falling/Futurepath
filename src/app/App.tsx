@@ -4,7 +4,6 @@ import { supabase } from './lib/supabase';
 import { getOrCreateAnonId } from './lib/anon';
 import { Navigation } from './components/Navigation';
 import { Home } from './pages/Home';
-import { Articles } from './pages/Articles';
 import { Courses } from './pages/Courses';
 import { Games } from './pages/Games';
 import { Profile } from './pages/Profile';
@@ -65,7 +64,6 @@ export default function App() {
                 <Navigation isAuthenticated={isAuthenticated} onAuthChange={checkAuth} />
                 <Routes>
                   <Route path="/" element={<Home />} />
-                  <Route path="/articles" element={<Articles />} />
                   <Route path="/courses" element={<Courses />} />
                   <Route path="/games" element={<Games />} />
                   <Route path="/games/ai-chatbot" element={<AIChatbot />} />

@@ -79,13 +79,6 @@ export function Home() {
                 Try Games
               </Button>
             </Link>
-            <Link to="/articles">
-              <Button 
-                variant="outline" 
-                className="border-2 border-black hover:bg-black hover:text-white px-8 py-6 text-lg transition-all transform hover:scale-105">
-                Read Articles
-              </Button>
-            </Link>
           </div>
         </section>
 
@@ -143,98 +136,6 @@ export function Home() {
               </motion.div>
             ))}
           </div>
-        </section>
-
-        {/* Article Previews - Black Box Design */}
-        <section className="py-32 px-6 bg-black text-white relative overflow-hidden">
-          {/* Geometric shapes visible in black background */}
-          <div className="absolute inset-0 pointer-events-none overflow-hidden z-0 opacity-60">
-            
-            <motion.div
-              className="absolute bottom-20 right-[10%] w-28 h-28 border-2 border-[#D4AF37] rounded-full"
-              animate={{
-                scale: [1, 1.2, 1],
-                x: [0, 20, 0],
-              }}
-              transition={{
-                duration: 8,
-                repeat: Infinity,
-                ease: 'easeInOut',
-              }}
-            />
-          </div>
-
-          <motion.div
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            viewport={{ once: true }}
-            className="text-center mb-16 relative z-10"
-          >
-            <h2 className="text-5xl mb-6">
-              Insights for your <span className="text-[#D4AF37]">career growth</span>
-            </h2>
-            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-              Expert insights and career guidance to support your professional journey
-            </p>
-          </motion.div>
-
-          <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
-            {[
-              {
-                title: 'Navigating Job Interviews in a Competitive Market',
-                description: 'Master the art of interviewing with research, practice, and adaptability in today\'s high-stakes job market.',
-                readTime: '6 min read'
-              },
-              {
-                title: 'Networking for Career Advancement',
-                description: 'Build meaningful professional connections that drive career mobility, mentorship, and opportunities.',
-                readTime: '5 min read'
-              },
-              {
-                title: 'Crafting Resumes That Open Doors',
-                description: 'Create concise, compelling resumes that stand out to employers and pass ATS screening.',
-                readTime: '7 min read'
-              }
-            ].map((article, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, scale: 0.95 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.15, duration: 0.5 }}
-              >
-                <Link to="/articles">
-                  <Card className="overflow-hidden bg-white/5 border-white/10 hover:border-[#D4AF37] transition-all hover:shadow-xl group cursor-pointer h-full backdrop-blur-sm">
-                    <div className="p-6">
-                      <p className="text-xs text-[#D4AF37] mb-3 tracking-wider">{article.readTime}</p>
-                      <h4 className="mb-3 text-xl text-white group-hover:text-[#D4AF37] transition-colors">{article.title}</h4>
-                      <p className="text-gray-400 mb-4 leading-relaxed">
-                        {article.description}
-                      </p>
-                      <div className="flex items-center text-[#D4AF37]">
-                        <span className="text-sm">Read More</span>
-                        <span className="ml-1">→</span>
-                      </div>
-                    </div>
-                  </Card>
-                </Link>
-              </motion.div>
-            ))}
-          </div>
-
-          <motion.div
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.6 }}
-            className="text-center mt-12 relative z-10"
-          >
-            <Link to="/articles">
-              <Button className="px-8 py-4 border-2 border-[#D4AF37] bg-transparent text-[#D4AF37] hover:bg-[#D4AF37] hover:text-black transition-all">
-                View All Articles
-              </Button>
-            </Link>
-          </motion.div>
         </section>
 
         {/* Course Previews */}
